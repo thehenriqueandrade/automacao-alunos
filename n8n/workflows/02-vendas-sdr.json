@@ -1,22 +1,277 @@
 {
   "name": "02 — Vendas: SDR IA (Recuperação de Vendas)",
-  "description": "Ativado por webhook (carrinho abandonado) ou manualmente. Consulta o Dify (App SDR) e dispara mensagem via Z-API.",
-  "nodes": [],
-  "connections": {},
-  "_meta": {
-    "status": "template",
-    "gatilhos": [
-      "Webhook externo (Pagtrust: ABANDONED_CART ou PAYMENT_REFUSED)",
-      "Trigger manual para reengajamento pontual"
-    ],
-    "etapas": [
-      "1. Webhook / Manual Trigger",
-      "2. Supabase: Busca dados do aluno pelo whatsapp ou order_id",
-      "3. HTTP Request — Dify App SDR (POST /chat-messages)",
-      "4. Error Handler — notifica WhatsApp pessoal em caso de falha no Dify",
-      "5. Z-API: Envia mensagem WhatsApp para o aluno",
-      "6. Error Handler — notifica WhatsApp pessoal em caso de falha na Z-API",
-      "7. Supabase: Atualiza status do contato no aluno"
-    ]
+  "active": false,
+  "nodes": [
+    {
+      "id": "w2-note-001",
+      "name": "Nota — Configuração",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 60],
+      "parameters": {
+        "content": "## Fluxo 02 — SDR IA\n\n**Variáveis de ambiente necessárias (n8n Settings → Variables):**\n- `DIFY_BASE_URL` — ex: https://dify.seudominio.com/v1\n- `DIFY_API_KEY_SDR` — API Key do App SDR no Dify\n- `ZAPI_INSTANCE_ID` — ID da instância Z-API\n- `ZAPI_TOKEN` — Token da instância Z-API\n- `ZAPI_CLIENT_TOKEN` — Client-Token da conta Z-API\n- `OPERADOR_WHATSAPP` — Seu WhatsApp pessoal (com DDI, ex: 5511999990000)\n\n**Credencial necessária:** Supabase — jornada_alunos\n\n**Gatilho:** POST /webhook/sdr-trigger\nPayload esperado: `{ \"whatsapp\": \"5511999990001\", \"produto\": \"...\", \"link_checkout\": \"...\" }`",
+        "height": 220,
+        "width": 1400
+      }
+    },
+    {
+      "id": "w2-node-001",
+      "name": "SDR — Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 380],
+      "webhookId": "sdr-trigger-001",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sdr-trigger",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "w2-node-002",
+      "name": "Supabase — Buscar Aluno",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 380],
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "alunos",
+        "returnAll": false,
+        "limit": 1,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "whatsapp",
+              "condition": "eq",
+              "keyValue": "={{ $json.body?.whatsapp ?? $json.whatsapp }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w2-node-003",
+      "name": "Dify — SDR IA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 380],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DIFY_BASE_URL }}/chat-messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ inputs: { nome: $json.nome, whatsapp: $json.whatsapp, produto: $('SDR — Webhook').item.json.body?.produto ?? '', link_checkout: $('SDR — Webhook').item.json.body?.link_checkout ?? '', valor: $('SDR — Webhook').item.json.body?.valor ?? '' }, query: 'Gere uma mensagem de recuperação de vendas personalizada para este lead.', response_mode: 'blocking', conversation_id: '', user: $json.whatsapp }) }}",
+        "options": {
+          "failOnStatusCode": false
+        },
+        "genericAuthType": "httpBearerAuth"
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "DIFY_SDR_BEARER_CREDENTIAL_ID",
+          "name": "Dify SDR — Bearer Token"
+        }
+      }
+    },
+    {
+      "id": "w2-node-004",
+      "name": "Dify respondeu?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 380],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "cond-dify-answer",
+              "leftValue": "={{ $json.answer }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w2-node-005",
+      "name": "Z-API — Enviar Aluno",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 260],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.z-api.io/instances/{{ $env.ZAPI_INSTANCE_ID }}/token/{{ $env.ZAPI_TOKEN }}/send-text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Client-Token",  "value": "={{ $env.ZAPI_CLIENT_TOKEN }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ phone: $('Supabase — Buscar Aluno').item.json.whatsapp, message: $('Dify — SDR IA').item.json.answer }) }}",
+        "options": {
+          "failOnStatusCode": false
+        }
+      }
+    },
+    {
+      "id": "w2-node-006",
+      "name": "Z-API — Erro Dify (notificar)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 500],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.z-api.io/instances/{{ $env.ZAPI_INSTANCE_ID }}/token/{{ $env.ZAPI_TOKEN }}/send-text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Client-Token",  "value": "={{ $env.ZAPI_CLIENT_TOKEN }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ phone: $env.OPERADOR_WHATSAPP, message: '⚠️ Erro no Fluxo SDR: o Dify não retornou resposta.\\nAluno: ' + $('Supabase — Buscar Aluno').item.json.nome + ' (' + $('Supabase — Buscar Aluno').item.json.whatsapp + ')\\nResposta Dify: ' + JSON.stringify($('Dify — SDR IA').item.json) }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "w2-node-007",
+      "name": "Z-API enviou?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 260],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "cond-zapi-ok",
+              "leftValue": "={{ $json.zaapId ?? $json.messageId }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w2-node-008",
+      "name": "Supabase — Update SDR",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1560, 160],
+      "parameters": {
+        "operation": "update",
+        "tableId": "alunos",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "whatsapp",
+              "condition": "eq",
+              "keyValue": "={{ $('Supabase — Buscar Aluno').item.json.whatsapp }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "atualizado_em",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w2-node-009",
+      "name": "Z-API — Erro Z-API (notificar)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 360],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.z-api.io/instances/{{ $env.ZAPI_INSTANCE_ID }}/token/{{ $env.ZAPI_TOKEN }}/send-text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Client-Token",  "value": "={{ $env.ZAPI_CLIENT_TOKEN }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ phone: $env.OPERADOR_WHATSAPP, message: '⚠️ Erro no Fluxo SDR: a Z-API não confirmou envio.\\nAluno: ' + $('Supabase — Buscar Aluno').item.json.nome + ' (' + $('Supabase — Buscar Aluno').item.json.whatsapp + ')\\nResposta Z-API: ' + JSON.stringify($('Z-API — Enviar Aluno').item.json) }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "SDR — Webhook": {
+      "main": [
+        [{ "node": "Supabase — Buscar Aluno", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Buscar Aluno": {
+      "main": [
+        [{ "node": "Dify — SDR IA", "type": "main", "index": 0 }]
+      ]
+    },
+    "Dify — SDR IA": {
+      "main": [
+        [{ "node": "Dify respondeu?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Dify respondeu?": {
+      "main": [
+        [{ "node": "Z-API — Enviar Aluno",        "type": "main", "index": 0 }],
+        [{ "node": "Z-API — Erro Dify (notificar)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Z-API — Enviar Aluno": {
+      "main": [
+        [{ "node": "Z-API enviou?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Z-API enviou?": {
+      "main": [
+        [{ "node": "Supabase — Update SDR",          "type": "main", "index": 0 }],
+        [{ "node": "Z-API — Erro Z-API (notificar)",  "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
   }
 }

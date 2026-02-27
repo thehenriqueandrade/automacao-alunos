@@ -1,16 +1,152 @@
 {
   "name": "01 — Entrada: Webhook Receiver (Pagtrust)",
-  "description": "Recebe o evento PURCHASE_APPROVED da Pagtrust, normaliza os dados e persiste no Supabase.",
-  "nodes": [],
-  "connections": {},
-  "_meta": {
-    "status": "template",
-    "etapas": [
-      "1. Webhook Trigger — recebe POST da Pagtrust",
-      "2. Edit Fields — normaliza campos (nome, whatsapp, email, order_id, valor, status)",
-      "3. Supabase: Upsert alunos — cadastra ou atualiza o aluno",
-      "4. Supabase: Insert transacoes — registra a transação",
-      "5. (Opcional) Trigger manual do Fluxo SDR ou Tutor via HTTP"
-    ]
+  "active": false,
+  "nodes": [
+    {
+      "id": "w1-node-001",
+      "name": "Pagtrust — Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "pagtrust-entrada-001",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pagtrust",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "w1-node-002",
+      "name": "Normalizar Campos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300],
+      "parameters": {
+        "mode": "manual",
+        "fields": {
+          "values": [
+            {
+              "name": "nome",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body?.customer?.name ?? $json.customer?.name ?? '' }}"
+            },
+            {
+              "name": "whatsapp",
+              "type": "stringValue",
+              "stringValue": "={{ ($json.body?.customer?.phone ?? $json.customer?.phone ?? '').toString().replace(/\\D/g, '') }}"
+            },
+            {
+              "name": "email",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body?.customer?.email ?? $json.customer?.email ?? '' }}"
+            },
+            {
+              "name": "order_id",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body?.order?.id ?? $json.order?.id ?? '' }}"
+            },
+            {
+              "name": "valor",
+              "type": "numberValue",
+              "numberValue": "={{ $json.body?.order?.amount ?? $json.order?.amount ?? 0 }}"
+            },
+            {
+              "name": "status",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body?.order?.status ?? $json.order?.status ?? 'UNKNOWN' }}"
+            },
+            {
+              "name": "dados_raw",
+              "type": "stringValue",
+              "stringValue": "={{ JSON.stringify($json.body ?? $json) }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w1-node-003",
+      "name": "Supabase — Upsert Aluno",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "parameters": {
+        "operation": "createOrUpdate",
+        "tableId": "alunos",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "nome",      "fieldValue": "={{ $json.nome }}" },
+            { "fieldId": "whatsapp",  "fieldValue": "={{ $json.whatsapp }}" },
+            { "fieldId": "email",     "fieldValue": "={{ $json.email }}" }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w1-node-004",
+      "name": "Supabase — Insert Transação",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [900, 300],
+      "parameters": {
+        "operation": "create",
+        "tableId": "transacoes",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "order_id",  "fieldValue": "={{ $('Normalizar Campos').item.json.order_id }}" },
+            { "fieldId": "aluno_id",  "fieldValue": "={{ $json.id }}" },
+            { "fieldId": "valor",     "fieldValue": "={{ $('Normalizar Campos').item.json.valor }}" },
+            { "fieldId": "status",    "fieldValue": "={{ $('Normalizar Campos').item.json.status }}" },
+            { "fieldId": "dados_raw", "fieldValue": "={{ $('Normalizar Campos').item.json.dados_raw }}" }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w1-note-001",
+      "name": "Nota — Variáveis",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 80],
+      "parameters": {
+        "content": "## Fluxo 01 — Webhook Receiver\n\n**Credencial necessária:**\n- Supabase credential (URL + Service Role Key)\n\n**Configurar em:** Settings → Credentials → Add → Supabase\n\n**URL do webhook gerado:**\nhttps://[seu-n8n]/webhook/pagtrust",
+        "height": 180,
+        "width": 660
+      }
+    }
+  ],
+  "connections": {
+    "Pagtrust — Webhook": {
+      "main": [
+        [{ "node": "Normalizar Campos", "type": "main", "index": 0 }]
+      ]
+    },
+    "Normalizar Campos": {
+      "main": [
+        [{ "node": "Supabase — Upsert Aluno", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Upsert Aluno": {
+      "main": [
+        [{ "node": "Supabase — Insert Transação", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
   }
 }
