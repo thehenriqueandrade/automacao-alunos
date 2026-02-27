@@ -3,11 +3,23 @@
   "active": false,
   "nodes": [
     {
+      "id": "w1-note-001",
+      "name": "Nota — Configuração",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 60],
+      "parameters": {
+        "content": "## Fluxo 01 — Webhook Receiver\n\n**Credencial necessária:** Supabase — jornada_alunos\n**Configurar em:** Settings → Credentials → Add → Supabase\n\n**Lógica aluno (upsert manual):**\n1. Tenta criar → se 409 (já existe), busca o aluno existente\n2. Merge garante que o id do aluno sempre segue para a transação\n\n**URL do webhook:**\nhttps://[seu-n8n]/webhook/pagtrust",
+        "height": 200,
+        "width": 760
+      }
+    },
+    {
       "id": "w1-node-001",
       "name": "Pagtrust — Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 300],
+      "position": [240, 380],
       "webhookId": "pagtrust-entrada-001",
       "parameters": {
         "httpMethod": "POST",
@@ -21,7 +33,7 @@
       "name": "Normalizar Campos",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [460, 300],
+      "position": [460, 380],
       "parameters": {
         "mode": "manual",
         "fields": {
@@ -78,68 +90,115 @@
     },
     {
       "id": "w1-node-003",
-      "name": "Supabase — Upsert Aluno",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [680, 300],
+      "name": "Supabase — Create Aluno",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 380],
       "onError": "continueRegularOutput",
       "parameters": {
-        "method": "POST",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/alunos?on_conflict=whatsapp",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type",  "value": "application/json" },
-            { "name": "Prefer",        "value": "resolution=merge-duplicates,return=representation" }
+        "operation": "create",
+        "tableId": "alunos",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "nome",     "fieldValue": "={{ $json.nome }}" },
+            { "fieldId": "whatsapp", "fieldValue": "={{ $json.whatsapp }}" },
+            { "fieldId": "email",    "fieldValue": "={{ $json.email }}" }
           ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ nome: $json.nome, whatsapp: $json.whatsapp, email: $json.email }) }}",
-        "options": {
-          "failOnStatusCode": false
         }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w1-node-005",
+      "name": "Aluno Criado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 380],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "cond-aluno-id",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w1-node-006",
+      "name": "Supabase — Buscar Aluno",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1120, 520],
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "alunos",
+        "returnAll": false,
+        "limit": 1,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "whatsapp",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalizar Campos').item.json.whatsapp }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w1-node-007",
+      "name": "Merge — Aluno",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1340, 380],
+      "parameters": {
+        "mode": "append",
+        "options": {}
       }
     },
     {
       "id": "w1-node-004",
-      "name": "Supabase — Insert Transação",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [900, 300],
+      "name": "Supabase — Create Transação",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1560, 380],
       "onError": "continueRegularOutput",
       "parameters": {
-        "method": "POST",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/transacoes?on_conflict=order_id",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type",  "value": "application/json" },
-            { "name": "Prefer",        "value": "resolution=merge-duplicates" }
+        "operation": "create",
+        "tableId": "transacoes",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "order_id",  "fieldValue": "={{ $('Normalizar Campos').item.json.order_id }}" },
+            { "fieldId": "aluno_id",  "fieldValue": "={{ $json.id }}" },
+            { "fieldId": "valor",     "fieldValue": "={{ $('Normalizar Campos').item.json.valor }}" },
+            { "fieldId": "status",    "fieldValue": "={{ $('Normalizar Campos').item.json.status }}" },
+            { "fieldId": "dados_raw", "fieldValue": "={{ $('Normalizar Campos').item.json.dados_raw }}" }
           ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ order_id: $('Normalizar Campos').item.json.order_id, aluno_id: $json[0].id, valor: $('Normalizar Campos').item.json.valor, status: $('Normalizar Campos').item.json.status, dados_raw: $('Normalizar Campos').item.json.dados_raw }) }}",
-        "options": {
-          "failOnStatusCode": false
         }
-      }
-    },
-    {
-      "id": "w1-note-001",
-      "name": "Nota — Variáveis",
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
-      "position": [240, 80],
-      "parameters": {
-        "content": "## Fluxo 01 — Webhook Receiver\n\n**Variáveis de ambiente necessárias (n8n Settings → Variables):**\n- `SUPABASE_URL` — ex: https://xxxx.supabase.co\n- `SUPABASE_SERVICE_ROLE_KEY` — Service Role Key do Supabase\n\n**Nenhuma credential necessária** — autenticação via variáveis de ambiente.\n\n**URL do webhook gerado:**\nhttps://[seu-n8n]/webhook/pagtrust",
-        "height": 180,
-        "width": 660
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
       }
     }
   ],
@@ -151,12 +210,28 @@
     },
     "Normalizar Campos": {
       "main": [
-        [{ "node": "Supabase — Upsert Aluno", "type": "main", "index": 0 }]
+        [{ "node": "Supabase — Create Aluno", "type": "main", "index": 0 }]
       ]
     },
-    "Supabase — Upsert Aluno": {
+    "Supabase — Create Aluno": {
       "main": [
-        [{ "node": "Supabase — Insert Transação", "type": "main", "index": 0 }]
+        [{ "node": "Aluno Criado?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aluno Criado?": {
+      "main": [
+        [{ "node": "Merge — Aluno", "type": "main", "index": 0 }],
+        [{ "node": "Supabase — Buscar Aluno", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Buscar Aluno": {
+      "main": [
+        [{ "node": "Merge — Aluno", "type": "main", "index": 1 }]
+      ]
+    },
+    "Merge — Aluno": {
+      "main": [
+        [{ "node": "Supabase — Create Transação", "type": "main", "index": 0 }]
       ]
     }
   },
