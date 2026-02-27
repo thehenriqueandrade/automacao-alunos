@@ -29,37 +29,47 @@
             {
               "name": "nome",
               "type": "stringValue",
-              "stringValue": "={{ $json.body?.customer?.name ?? $json.customer?.name ?? '' }}"
+              "stringValue": "={{ $json.body.data.buyer.name }}"
             },
             {
               "name": "whatsapp",
               "type": "stringValue",
-              "stringValue": "={{ ($json.body?.customer?.phone ?? $json.customer?.phone ?? '').toString().replace(/\\D/g, '') }}"
+              "stringValue": "={{ $json.body.data.buyer.checkout_phone.toString().replace(/\\D/g, '') }}"
             },
             {
               "name": "email",
               "type": "stringValue",
-              "stringValue": "={{ $json.body?.customer?.email ?? $json.customer?.email ?? '' }}"
+              "stringValue": "={{ $json.body.data.buyer.email }}"
             },
             {
               "name": "order_id",
               "type": "stringValue",
-              "stringValue": "={{ $json.body?.order?.id ?? $json.order?.id ?? '' }}"
+              "stringValue": "={{ $json.body.data.purchase.transaction }}"
             },
             {
               "name": "valor",
               "type": "numberValue",
-              "numberValue": "={{ $json.body?.order?.amount ?? $json.order?.amount ?? 0 }}"
+              "numberValue": "={{ $json.body.data.purchase.full_price.value }}"
             },
             {
               "name": "status",
               "type": "stringValue",
-              "stringValue": "={{ $json.body?.order?.status ?? $json.order?.status ?? 'UNKNOWN' }}"
+              "stringValue": "={{ $json.body.data.purchase.status }}"
+            },
+            {
+              "name": "event",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body.event }}"
+            },
+            {
+              "name": "produto",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body.data.product.name }}"
             },
             {
               "name": "dados_raw",
               "type": "stringValue",
-              "stringValue": "={{ JSON.stringify($json.body ?? $json) }}"
+              "stringValue": "={{ JSON.stringify($json.body) }}"
             }
           ]
         },
