@@ -79,52 +79,54 @@
     {
       "id": "w1-node-003",
       "name": "Supabase — Upsert Aluno",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [680, 300],
+      "onError": "continueRegularOutput",
       "parameters": {
-        "operation": "createOrUpdate",
-        "tableId": "alunos",
-        "conflictColumns": "whatsapp",
-        "fieldsUi": {
-          "fieldValues": [
-            { "fieldId": "nome",      "fieldValue": "={{ $json.nome }}" },
-            { "fieldId": "whatsapp",  "fieldValue": "={{ $json.whatsapp }}" },
-            { "fieldId": "email",     "fieldValue": "={{ $json.email }}" }
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/alunos?on_conflict=whatsapp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Prefer",        "value": "resolution=merge-duplicates,return=representation" }
           ]
-        }
-      },
-      "credentials": {
-        "supabaseApi": {
-          "id": "SUPABASE_CREDENTIAL_ID",
-          "name": "Supabase — jornada_alunos"
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ nome: $json.nome, whatsapp: $json.whatsapp, email: $json.email }) }}",
+        "options": {
+          "failOnStatusCode": false
         }
       }
     },
     {
       "id": "w1-node-004",
       "name": "Supabase — Insert Transação",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [900, 300],
+      "onError": "continueRegularOutput",
       "parameters": {
-        "operation": "createOrUpdate",
-        "tableId": "transacoes",
-        "conflictColumns": "order_id",
-        "fieldsUi": {
-          "fieldValues": [
-            { "fieldId": "order_id",  "fieldValue": "={{ $('Normalizar Campos').item.json.order_id }}" },
-            { "fieldId": "aluno_id",  "fieldValue": "={{ $json.id }}" },
-            { "fieldId": "valor",     "fieldValue": "={{ $('Normalizar Campos').item.json.valor }}" },
-            { "fieldId": "status",    "fieldValue": "={{ $('Normalizar Campos').item.json.status }}" },
-            { "fieldId": "dados_raw", "fieldValue": "={{ $('Normalizar Campos').item.json.dados_raw }}" }
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/transacoes?on_conflict=order_id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Prefer",        "value": "resolution=merge-duplicates" }
           ]
-        }
-      },
-      "credentials": {
-        "supabaseApi": {
-          "id": "SUPABASE_CREDENTIAL_ID",
-          "name": "Supabase — jornada_alunos"
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ order_id: $('Normalizar Campos').item.json.order_id, aluno_id: $json[0].id, valor: $('Normalizar Campos').item.json.valor, status: $('Normalizar Campos').item.json.status, dados_raw: $('Normalizar Campos').item.json.dados_raw }) }}",
+        "options": {
+          "failOnStatusCode": false
         }
       }
     },
@@ -135,7 +137,7 @@
       "typeVersion": 1,
       "position": [240, 80],
       "parameters": {
-        "content": "## Fluxo 01 — Webhook Receiver\n\n**Credencial necessária:**\n- Supabase credential (URL + Service Role Key)\n\n**Configurar em:** Settings → Credentials → Add → Supabase\n\n**URL do webhook gerado:**\nhttps://[seu-n8n]/webhook/pagtrust",
+        "content": "## Fluxo 01 — Webhook Receiver\n\n**Variáveis de ambiente necessárias (n8n Settings → Variables):**\n- `SUPABASE_URL` — ex: https://xxxx.supabase.co\n- `SUPABASE_SERVICE_ROLE_KEY` — Service Role Key do Supabase\n\n**Nenhuma credential necessária** — autenticação via variáveis de ambiente.\n\n**URL do webhook gerado:**\nhttps://[seu-n8n]/webhook/pagtrust",
         "height": 180,
         "width": 660
       }
