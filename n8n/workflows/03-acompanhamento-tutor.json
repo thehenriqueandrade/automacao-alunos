@@ -141,7 +141,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ phone: $('Loop por Aluno').item.json.whatsapp, message: $('Dify — Tutor IA').item.json.answer }) }}",
+        "jsonBody": "={{ JSON.stringify({ phone: '55' + $('Loop por Aluno').item.json.whatsapp, message: $('Dify — Tutor IA').item.json.answer }) }}",
         "options": {
           "failOnStatusCode": false
         }

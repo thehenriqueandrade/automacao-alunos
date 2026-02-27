@@ -130,7 +130,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ phone: $('Supabase — Buscar Aluno').item.json.whatsapp, message: $('Dify — SDR IA').item.json.answer }) }}",
+        "jsonBody": "={{ JSON.stringify({ phone: '55' + $('Supabase — Buscar Aluno').item.json.whatsapp, message: $('Dify — SDR IA').item.json.answer }) }}",
         "options": {
           "failOnStatusCode": false
         }
