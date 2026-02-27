@@ -66,12 +66,11 @@
       "parameters": {
         "method": "POST",
         "url": "={{ $env.DIFY_BASE_URL }}/chat-messages",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpBearerAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "application/json" }
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.DIFY_API_KEY_SDR }}" }
           ]
         },
         "sendBody": true,
@@ -79,13 +78,6 @@
         "jsonBody": "={{ JSON.stringify({ inputs: { nome: $json.nome, whatsapp: $json.whatsapp, produto: $('SDR — Webhook').item.json.body?.produto ?? '', link_checkout: $('SDR — Webhook').item.json.body?.link_checkout ?? '', valor: $('SDR — Webhook').item.json.body?.valor ?? '' }, query: 'Gere uma mensagem de recuperação de vendas personalizada para este lead.', response_mode: 'blocking', conversation_id: '', user: $json.whatsapp }) }}",
         "options": {
           "failOnStatusCode": false
-        },
-        "genericAuthType": "httpBearerAuth"
-      },
-      "credentials": {
-        "httpBearerAuth": {
-          "id": "DIFY_SDR_BEARER_CREDENTIAL_ID",
-          "name": "Dify SDR — Bearer Token"
         }
       }
     },
