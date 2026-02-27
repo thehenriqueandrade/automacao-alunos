@@ -1,0 +1,23 @@
+{
+  "name": "03 — Acompanhamento: Tutor IA (Retenção)",
+  "description": "Ativado por Cron (toda segunda-feira) ou por evento de conclusão de aula. Verifica ausência no Supabase, consulta Dify (App Tutor) e dispara via Z-API.",
+  "nodes": [],
+  "connections": {},
+  "_meta": {
+    "status": "template",
+    "gatilhos": [
+      "Cron — toda segunda-feira às 09h",
+      "Webhook — evento de conclusão/acesso de aula vindo da plataforma de ensino"
+    ],
+    "etapas": [
+      "1. Cron Trigger / Webhook Trigger",
+      "2. Supabase: Lista alunos com dias_sem_acesso >= threshold configurável",
+      "3. Loop (SplitInBatches) — itera por aluno",
+      "4. HTTP Request — Dify App Tutor (POST /chat-messages)",
+      "5. Error Handler — notifica WhatsApp pessoal em caso de falha no Dify",
+      "6. Z-API: Envia mensagem WhatsApp para o aluno",
+      "7. Error Handler — notifica WhatsApp pessoal em caso de falha na Z-API",
+      "8. Supabase: Registra data do último contato do tutor"
+    ]
+  }
+}

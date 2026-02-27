@@ -1,0 +1,22 @@
+{
+  "name": "02 — Vendas: SDR IA (Recuperação de Vendas)",
+  "description": "Ativado por webhook (carrinho abandonado) ou manualmente. Consulta o Dify (App SDR) e dispara mensagem via Z-API.",
+  "nodes": [],
+  "connections": {},
+  "_meta": {
+    "status": "template",
+    "gatilhos": [
+      "Webhook externo (Pagtrust: ABANDONED_CART ou PAYMENT_REFUSED)",
+      "Trigger manual para reengajamento pontual"
+    ],
+    "etapas": [
+      "1. Webhook / Manual Trigger",
+      "2. Supabase: Busca dados do aluno pelo whatsapp ou order_id",
+      "3. HTTP Request — Dify App SDR (POST /chat-messages)",
+      "4. Error Handler — notifica WhatsApp pessoal em caso de falha no Dify",
+      "5. Z-API: Envia mensagem WhatsApp para o aluno",
+      "6. Error Handler — notifica WhatsApp pessoal em caso de falha na Z-API",
+      "7. Supabase: Atualiza status do contato no aluno"
+    ]
+  }
+}

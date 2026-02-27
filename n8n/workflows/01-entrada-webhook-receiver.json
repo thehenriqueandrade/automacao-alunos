@@ -1,0 +1,16 @@
+{
+  "name": "01 — Entrada: Webhook Receiver (Pagtrust)",
+  "description": "Recebe o evento PURCHASE_APPROVED da Pagtrust, normaliza os dados e persiste no Supabase.",
+  "nodes": [],
+  "connections": {},
+  "_meta": {
+    "status": "template",
+    "etapas": [
+      "1. Webhook Trigger — recebe POST da Pagtrust",
+      "2. Edit Fields — normaliza campos (nome, whatsapp, email, order_id, valor, status)",
+      "3. Supabase: Upsert alunos — cadastra ou atualiza o aluno",
+      "4. Supabase: Insert transacoes — registra a transação",
+      "5. (Opcional) Trigger manual do Fluxo SDR ou Tutor via HTTP"
+    ]
+  }
+}

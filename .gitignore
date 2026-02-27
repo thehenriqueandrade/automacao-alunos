@@ -1,0 +1,23 @@
+# Variáveis de ambiente
+.env
+.env.local
+.env.production
+
+# Credenciais exportadas do n8n (nunca versionar)
+n8n/credentials/*.json
+!n8n/credentials/.gitkeep
+
+# Transcrições de aulas (arquivos grandes, gerenciar fora do git)
+dify/apps/tutor-ia/knowledge/transcricoes-aulas/*
+!dify/apps/tutor-ia/knowledge/transcricoes-aulas/.gitkeep
+
+# PDFs técnicos (idem)
+dify/apps/tutor-ia/knowledge/pdfs-tecnicos/*
+!dify/apps/tutor-ia/knowledge/pdfs-tecnicos/.gitkeep
+
+# macOS
+.DS_Store
+
+# Editores
+.vscode/
+.idea/
