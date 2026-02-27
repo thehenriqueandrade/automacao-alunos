@@ -68,8 +68,8 @@
             },
             {
               "name": "dados_raw",
-              "type": "stringValue",
-              "stringValue": "={{ JSON.stringify($json.body) }}"
+              "type": "objectValue",
+              "objectValue": "={{ $json.body }}"
             }
           ]
         },
@@ -85,6 +85,7 @@
       "parameters": {
         "operation": "createOrUpdate",
         "tableId": "alunos",
+        "conflictColumns": "whatsapp",
         "fieldsUi": {
           "fieldValues": [
             { "fieldId": "nome",      "fieldValue": "={{ $json.nome }}" },
@@ -107,8 +108,9 @@
       "typeVersion": 1,
       "position": [900, 300],
       "parameters": {
-        "operation": "create",
+        "operation": "createOrUpdate",
         "tableId": "transacoes",
+        "conflictColumns": "order_id",
         "fieldsUi": {
           "fieldValues": [
             { "fieldId": "order_id",  "fieldValue": "={{ $('Normalizar Campos').item.json.order_id }}" },
