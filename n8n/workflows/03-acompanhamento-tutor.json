@@ -9,7 +9,7 @@
       "typeVersion": 1,
       "position": [240, 60],
       "parameters": {
-        "content": "## Fluxo 03 — Tutor IA\n\n**Variáveis de ambiente necessárias (n8n Settings → Variables):**\n- `SUPABASE_URL` — URL do projeto Supabase\n- `SUPABASE_SERVICE_ROLE_KEY` — Service Role Key do Supabase\n- `DIFY_BASE_URL` — ex: https://dify.seudominio.com/v1\n- `DIFY_API_KEY_TUTOR` — API Key do App Tutor no Dify\n- `ZAPI_INSTANCE_ID` — ID da instância Z-API\n- `ZAPI_TOKEN` — Token da instância Z-API\n- `ZAPI_CLIENT_TOKEN` — Client-Token da conta Z-API\n- `OPERADOR_WHATSAPP` — Seu WhatsApp pessoal (com DDI)\n- `TUTOR_DIAS_SEM_ACESSO` — Mínimo de dias sem acesso para disparar (padrão: 7)\n\n**Gatilho:** Cron — toda segunda-feira às 09:00\n\n**Observação:** A busca de alunos ausentes usa a Supabase REST API diretamente\n(HTTP Request) porque a view `v_ultimo_acesso_aluno` não é suportada pelo nó nativo Supabase.",
+        "content": "## Fluxo 03 — Tutor IA\n\n**Variáveis de ambiente necessárias (n8n Settings → Variables):**\n- `DIFY_BASE_URL` — ex: https://dify.seudominio.com/v1\n- `DIFY_API_KEY_TUTOR` — API Key do App Tutor no Dify\n- `ZAPI_INSTANCE_ID` — ID da instância Z-API\n- `ZAPI_TOKEN` — Token da instância Z-API\n- `ZAPI_CLIENT_TOKEN` — Client-Token da conta Z-API\n- `OPERADOR_WHATSAPP` — Seu WhatsApp pessoal (com DDI)\n- `TUTOR_DIAS_SEM_ACESSO` — Mínimo de dias sem acesso para disparar (padrão: 7)\n\n**Credencial necessária:** Supabase — jornada_alunos\n\n**Gatilho:** Cron — toda segunda-feira às 09:00\n\n**Fonte dos alunos:** view `v_alunos_tutor_acompanhamento` (status iniciante/em_andamento/quase_concluindo)",
         "height": 240,
         "width": 1500
       }
@@ -36,31 +36,27 @@
     {
       "id": "w3-node-002",
       "name": "Supabase — Alunos Ausentes",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
       "position": [460, 400],
       "parameters": {
-        "method": "GET",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/v_ultimo_acesso_aluno",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type",  "value": "application/json" },
-            { "name": "Prefer",        "value": "return=representation" }
+        "operation": "getAll",
+        "tableId": "v_alunos_tutor_acompanhamento",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "dias_sem_acesso",
+              "condition": "gte",
+              "keyValue": "={{ $env.TUTOR_DIAS_SEM_ACESSO ?? 7 }}"
+            }
           ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            { "name": "select",              "value": "*" },
-            { "name": "dias_sem_acesso",     "value": "=gte.{{ $env.TUTOR_DIAS_SEM_ACESSO ?? 7 }}" },
-            { "name": "order",               "value": "dias_sem_acesso.desc" }
-          ]
-        },
-        "options": {
-          "failOnStatusCode": false
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
         }
       }
     },
@@ -94,7 +90,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ inputs: { nome: $json.nome, whatsapp: $json.whatsapp, dias_sem_acesso: $json.dias_sem_acesso.toString(), total_aulas_acessadas: $json.total_aulas_acessadas.toString(), ultimo_acesso: $json.ultimo_acesso ?? 'nunca' }, query: 'Gere uma mensagem motivacional de reengajamento para este aluno que está ausente há ' + $json.dias_sem_acesso + ' dias.', response_mode: 'blocking', conversation_id: '', user: $json.whatsapp }) }}",
+        "jsonBody": "={{ JSON.stringify({ inputs: { nome: $json.nome, whatsapp: $json.whatsapp, status_aluno: $json.status_aluno, produtos: $json.produtos, menor_progresso: $json.menor_progresso.toString(), ultimo_acesso: $json.ultimo_acesso ?? 'nunca', dias_sem_acesso: $json.dias_sem_acesso.toString() }, query: 'Gere uma mensagem motivacional de reengajamento para este aluno que está ausente há ' + $json.dias_sem_acesso + ' dias.', response_mode: 'blocking', conversation_id: '', user: $json.whatsapp }) }}",
         "options": {
           "failOnStatusCode": false
         }
@@ -194,34 +190,60 @@
     {
       "id": "w3-node-009",
       "name": "Supabase — Update Tutor",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
       "position": [1780, 160],
       "parameters": {
-        "method": "PATCH",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/alunos",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type",  "value": "application/json" },
-            { "name": "Prefer",        "value": "return=minimal" }
-          ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
+        "operation": "update",
+        "tableId": "alunos",
+        "filters": {
+          "conditions": [
             {
-              "name": "whatsapp",
-              "value": "=eq.{{ $('Loop por Aluno').item.json.whatsapp }}"
+              "keyName": "whatsapp",
+              "condition": "eq",
+              "keyValue": "={{ $('Loop por Aluno').item.json.whatsapp }}"
             }
           ]
         },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ atualizado_em: new Date().toISOString() }) }}",
-        "options": {}
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "ultimo_contato_tutor",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w3-node-011",
+      "name": "Supabase — Create Historico",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2000, 160],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "create",
+        "tableId": "historico_contatos",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "aluno_id",         "fieldValue": "={{ $('Loop por Aluno').item.json.id }}" },
+            { "fieldId": "tipo",             "fieldValue": "tutor" },
+            { "fieldId": "mensagem_enviada", "fieldValue": "={{ $('Dify — Tutor IA').item.json.answer }}" }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
       }
     },
     {
@@ -282,11 +304,16 @@
     },
     "Z-API enviou?": {
       "main": [
-        [{ "node": "Supabase — Update Tutor",         "type": "main", "index": 0 }],
-        [{ "node": "Z-API — Erro Z-API (notificar)",   "type": "main", "index": 0 }]
+        [{ "node": "Supabase — Update Tutor",        "type": "main", "index": 0 }],
+        [{ "node": "Z-API — Erro Z-API (notificar)", "type": "main", "index": 0 }]
       ]
     },
     "Supabase — Update Tutor": {
+      "main": [
+        [{ "node": "Supabase — Create Historico", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Create Historico": {
       "main": [
         [{ "node": "Loop por Aluno", "type": "main", "index": 0 }]
       ]

@@ -9,9 +9,9 @@
       "typeVersion": 1,
       "position": [240, 60],
       "parameters": {
-        "content": "## Fluxo 01 — Webhook Receiver\n\n**Credencial necessária:** Supabase — jornada_alunos\n**Configurar em:** Settings → Credentials → Add → Supabase\n\n**Lógica aluno (upsert manual):**\n1. Tenta criar → se 409 (já existe), busca o aluno existente\n2. Merge garante que o id do aluno sempre segue para a transação\n\n**URL do webhook:**\nhttps://[seu-n8n]/webhook/pagtrust",
-        "height": 200,
-        "width": 760
+        "content": "## Fluxo 01 — Webhook Receiver\n\n**Credencial necessária:** Supabase — jornada_alunos\n**Configurar em:** Settings → Credentials → Add → Supabase\n\n**Lógica aluno (upsert manual por email):**\n1. Tenta criar → se 409 (já existe), busca pelo email\n2. Merge garante que o id do aluno segue para as próximas etapas\n\n**Lógica produto (upsert manual por nome):**\n1. Tenta criar → se 409 (já existe), busca pelo nome\n2. Merge garante que o id do produto segue para criar aluno_produtos\n\n**URL do webhook:**\nhttps://[seu-n8n]/webhook/pagtrust",
+        "height": 220,
+        "width": 900
       }
     },
     {
@@ -56,7 +56,7 @@
             {
               "name": "order_id",
               "type": "stringValue",
-              "stringValue": "={{ $json.body.data.purchase.transaction }}"
+              "stringValue": "={{ $json.body.orderId }}"
             },
             {
               "name": "valor",
@@ -101,8 +101,8 @@
         "fieldsUi": {
           "fieldValues": [
             { "fieldId": "nome",     "fieldValue": "={{ $json.nome }}" },
-            { "fieldId": "whatsapp", "fieldValue": "={{ $json.whatsapp }}" },
-            { "fieldId": "email",    "fieldValue": "={{ $json.email }}" }
+            { "fieldId": "email",    "fieldValue": "={{ $json.email }}" },
+            { "fieldId": "whatsapp", "fieldValue": "={{ $json.whatsapp }}" }
           ]
         }
       },
@@ -149,9 +149,9 @@
         "filters": {
           "conditions": [
             {
-              "keyName": "whatsapp",
+              "keyName": "email",
               "condition": "eq",
-              "keyValue": "={{ $('Normalizar Campos').item.json.whatsapp }}"
+              "keyValue": "={{ $('Normalizar Campos').item.json.email }}"
             }
           ]
         }
@@ -200,6 +200,114 @@
           "name": "Supabase — jornada_alunos"
         }
       }
+    },
+    {
+      "id": "w1-node-008",
+      "name": "Supabase — Create Produto",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1780, 380],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "create",
+        "tableId": "produtos",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "nome", "fieldValue": "={{ $('Normalizar Campos').item.json.produto }}" }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w1-node-009",
+      "name": "Produto Criado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 380],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "cond-produto-id",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w1-node-010",
+      "name": "Supabase — Buscar Produto",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2220, 520],
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "produtos",
+        "returnAll": false,
+        "limit": 1,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "nome",
+              "condition": "eq",
+              "keyValue": "={{ $('Normalizar Campos').item.json.produto }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w1-node-011",
+      "name": "Merge — Produto",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2440, 380],
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      }
+    },
+    {
+      "id": "w1-node-012",
+      "name": "Supabase — Create aluno_produtos",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2660, 380],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "create",
+        "tableId": "aluno_produtos",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "aluno_id",   "fieldValue": "={{ $('Merge — Aluno').item.json.id }}" },
+            { "fieldId": "produto_id", "fieldValue": "={{ $json.id }}" }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
     }
   ],
   "connections": {
@@ -232,6 +340,32 @@
     "Merge — Aluno": {
       "main": [
         [{ "node": "Supabase — Create Transação", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Create Transação": {
+      "main": [
+        [{ "node": "Supabase — Create Produto", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Create Produto": {
+      "main": [
+        [{ "node": "Produto Criado?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Produto Criado?": {
+      "main": [
+        [{ "node": "Merge — Produto", "type": "main", "index": 0 }],
+        [{ "node": "Supabase — Buscar Produto", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Buscar Produto": {
+      "main": [
+        [{ "node": "Merge — Produto", "type": "main", "index": 1 }]
+      ]
+    },
+    "Merge — Produto": {
+      "main": [
+        [{ "node": "Supabase — Create aluno_produtos", "type": "main", "index": 0 }]
       ]
     }
   },

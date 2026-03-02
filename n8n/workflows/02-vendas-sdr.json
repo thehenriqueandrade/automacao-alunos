@@ -9,7 +9,7 @@
       "typeVersion": 1,
       "position": [240, 60],
       "parameters": {
-        "content": "## Fluxo 02 — SDR IA\n\n**Variáveis de ambiente necessárias (n8n Settings → Variables):**\n- `DIFY_BASE_URL` — ex: https://dify.seudominio.com/v1\n- `DIFY_API_KEY_SDR` — API Key do App SDR no Dify\n- `ZAPI_INSTANCE_ID` — ID da instância Z-API\n- `ZAPI_TOKEN` — Token da instância Z-API\n- `ZAPI_CLIENT_TOKEN` — Client-Token da conta Z-API\n- `OPERADOR_WHATSAPP` — Seu WhatsApp pessoal (com DDI, ex: 5511999990000)\n\n**Credencial necessária:** Supabase — jornada_alunos\n\n**Gatilho:** POST /webhook/sdr-trigger\nPayload esperado: `{ \"whatsapp\": \"5511999990001\", \"produto\": \"...\", \"link_checkout\": \"...\" }`",
+        "content": "## Fluxo 02 — SDR IA\n\n**Variáveis de ambiente necessárias (n8n Settings → Variables):**\n- `DIFY_BASE_URL` — ex: https://dify.seudominio.com/v1\n- `DIFY_API_KEY_SDR` — API Key do App SDR no Dify\n- `ZAPI_INSTANCE_ID` — ID da instância Z-API\n- `ZAPI_TOKEN` — Token da instância Z-API\n- `ZAPI_CLIENT_TOKEN` — Client-Token da conta Z-API\n- `OPERADOR_WHATSAPP` — Seu WhatsApp pessoal (com DDI, ex: 5511999990000)\n\n**Credencial necessária:** Supabase — jornada_alunos\n\n**Gatilho:** POST /webhook/sdr-trigger\nPayload esperado: `{ \"whatsapp\": \"5511999990001\", \"link_checkout\": \"...\" }`\n\n**Fonte dos alunos:** view `v_alunos_sdr_prioridade` (status nunca_acessou ou inativo)",
         "height": 220,
         "width": 1400
       }
@@ -30,13 +30,13 @@
     },
     {
       "id": "w2-node-002",
-      "name": "Supabase — Buscar Aluno",
+      "name": "Supabase — Buscar Aluno SDR",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [460, 380],
       "parameters": {
         "operation": "getAll",
-        "tableId": "alunos",
+        "tableId": "v_alunos_sdr_prioridade",
         "returnAll": false,
         "limit": 1,
         "filters": {
@@ -69,13 +69,13 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Content-Type",  "value": "application/json" },
             { "name": "Authorization", "value": "=Bearer {{ $env.DIFY_API_KEY_SDR }}" }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ inputs: { nome: $json.nome, whatsapp: $json.whatsapp, produto: $('SDR — Webhook').item.json.body?.produto ?? '', link_checkout: $('SDR — Webhook').item.json.body?.link_checkout ?? '', valor: $('SDR — Webhook').item.json.body?.valor ?? '' }, query: 'Gere uma mensagem de recuperação de vendas personalizada para este lead.', response_mode: 'blocking', conversation_id: '', user: $json.whatsapp }) }}",
+        "jsonBody": "={{ JSON.stringify({ inputs: { nome: $json.nome, whatsapp: $json.whatsapp, produtos: $json.produtos, status_aluno: $json.status_aluno, menor_progresso: $json.menor_progresso.toString(), link_checkout: $('SDR — Webhook').item.json.body?.link_checkout ?? '' }, query: 'Gere uma mensagem de recuperação de vendas personalizada para este lead.', response_mode: 'blocking', conversation_id: '', user: $json.whatsapp }) }}",
         "options": {
           "failOnStatusCode": false
         }
@@ -122,7 +122,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ phone: '55' + $('Supabase — Buscar Aluno').item.json.whatsapp, message: $('Dify — SDR IA').item.json.answer }) }}",
+        "jsonBody": "={{ JSON.stringify({ phone: '55' + $('Supabase — Buscar Aluno SDR').item.json.whatsapp, message: $('Dify — SDR IA').item.json.answer }) }}",
         "options": {
           "failOnStatusCode": false
         }
@@ -146,7 +146,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ phone: $env.OPERADOR_WHATSAPP, message: '⚠️ Erro no Fluxo SDR: o Dify não retornou resposta.\\nAluno: ' + $('Supabase — Buscar Aluno').item.json.nome + ' (' + $('Supabase — Buscar Aluno').item.json.whatsapp + ')\\nResposta Dify: ' + JSON.stringify($('Dify — SDR IA').item.json) }) }}",
+        "jsonBody": "={{ JSON.stringify({ phone: $env.OPERADOR_WHATSAPP, message: '⚠️ Erro no Fluxo SDR: o Dify não retornou resposta.\\nAluno: ' + $('Supabase — Buscar Aluno SDR').item.json.nome + ' (' + $('Supabase — Buscar Aluno SDR').item.json.whatsapp + ')\\nResposta Dify: ' + JSON.stringify($('Dify — SDR IA').item.json) }) }}",
         "options": {}
       }
     },
@@ -186,16 +186,41 @@
             {
               "keyName": "whatsapp",
               "condition": "eq",
-              "keyValue": "={{ $('Supabase — Buscar Aluno').item.json.whatsapp }}"
+              "keyValue": "={{ $('Supabase — Buscar Aluno SDR').item.json.whatsapp }}"
             }
           ]
         },
         "fieldsUi": {
           "fieldValues": [
             {
-              "fieldId": "atualizado_em",
+              "fieldId": "ultimo_contato_sdr",
               "fieldValue": "={{ new Date().toISOString() }}"
             }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w2-node-010",
+      "name": "Supabase — Create Historico",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1780, 160],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "create",
+        "tableId": "historico_contatos",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "aluno_id",         "fieldValue": "={{ $('Supabase — Buscar Aluno SDR').item.json.id }}" },
+            { "fieldId": "tipo",             "fieldValue": "sdr" },
+            { "fieldId": "mensagem_enviada", "fieldValue": "={{ $('Dify — SDR IA').item.json.answer }}" }
           ]
         }
       },
@@ -224,7 +249,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ phone: $env.OPERADOR_WHATSAPP, message: '⚠️ Erro no Fluxo SDR: a Z-API não confirmou envio.\\nAluno: ' + $('Supabase — Buscar Aluno').item.json.nome + ' (' + $('Supabase — Buscar Aluno').item.json.whatsapp + ')\\nResposta Z-API: ' + JSON.stringify($('Z-API — Enviar Aluno').item.json) }) }}",
+        "jsonBody": "={{ JSON.stringify({ phone: $env.OPERADOR_WHATSAPP, message: '⚠️ Erro no Fluxo SDR: a Z-API não confirmou envio.\\nAluno: ' + $('Supabase — Buscar Aluno SDR').item.json.nome + ' (' + $('Supabase — Buscar Aluno SDR').item.json.whatsapp + ')\\nResposta Z-API: ' + JSON.stringify($('Z-API — Enviar Aluno').item.json) }) }}",
         "options": {}
       }
     }
@@ -232,10 +257,10 @@
   "connections": {
     "SDR — Webhook": {
       "main": [
-        [{ "node": "Supabase — Buscar Aluno", "type": "main", "index": 0 }]
+        [{ "node": "Supabase — Buscar Aluno SDR", "type": "main", "index": 0 }]
       ]
     },
-    "Supabase — Buscar Aluno": {
+    "Supabase — Buscar Aluno SDR": {
       "main": [
         [{ "node": "Dify — SDR IA", "type": "main", "index": 0 }]
       ]
@@ -247,7 +272,7 @@
     },
     "Dify respondeu?": {
       "main": [
-        [{ "node": "Z-API — Enviar Aluno",        "type": "main", "index": 0 }],
+        [{ "node": "Z-API — Enviar Aluno",         "type": "main", "index": 0 }],
         [{ "node": "Z-API — Erro Dify (notificar)", "type": "main", "index": 0 }]
       ]
     },
@@ -258,8 +283,13 @@
     },
     "Z-API enviou?": {
       "main": [
-        [{ "node": "Supabase — Update SDR",          "type": "main", "index": 0 }],
-        [{ "node": "Z-API — Erro Z-API (notificar)",  "type": "main", "index": 0 }]
+        [{ "node": "Supabase — Update SDR",         "type": "main", "index": 0 }],
+        [{ "node": "Z-API — Erro Z-API (notificar)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Update SDR": {
+      "main": [
+        [{ "node": "Supabase — Create Historico", "type": "main", "index": 0 }]
       ]
     }
   },

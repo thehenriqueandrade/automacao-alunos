@@ -1,0 +1,239 @@
+{
+  "name": "04 — Carrinho Abandonado (PIX Expirado)",
+  "active": false,
+  "nodes": [
+    {
+      "id": "w4-note-001",
+      "name": "Nota — Configuração",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 60],
+      "parameters": {
+        "content": "## Fluxo 04 — Carrinho Abandonado (PIX Expirado)\n\n**Variáveis de ambiente necessárias (n8n Settings → Variables):**\n- `DIFY_BASE_URL` — ex: https://dify.seudominio.com/v1\n- `DIFY_API_KEY_SDR` — API Key do App SDR no Dify\n- `ZAPI_INSTANCE_ID` — ID da instância Z-API\n- `ZAPI_TOKEN` — Token da instância Z-API\n- `ZAPI_CLIENT_TOKEN` — Client-Token da conta Z-API\n- `OPERADOR_WHATSAPP` — Seu WhatsApp pessoal (com DDI)\n\n**Credencial necessária:** Supabase — jornada_alunos\n\n**Gatilho:** Cron a cada hora\n\n**Lógica:** Busca PIX gerados entre 1h e 24h atrás ainda não aprovados, cujo aluno\nnão foi contatado nas últimas 24h. Envia mensagem de urgência via Dify SDR IA.\n\n**Fonte:** view `v_pix_abandonados` (máx 50 alunos por execução)",
+        "height": 240,
+        "width": 1400
+      }
+    },
+    {
+      "id": "w4-node-001",
+      "name": "Cron — A cada hora",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 400],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "w4-node-002",
+      "name": "Supabase — Buscar PIX Abandonados",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 400],
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "v_pix_abandonados",
+        "returnAll": false,
+        "limit": 50
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w4-node-003",
+      "name": "Loop por Aluno",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [680, 400],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "w4-node-004",
+      "name": "Dify — SDR IA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DIFY_BASE_URL }}/chat-messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.DIFY_API_KEY_SDR }}" },
+            { "name": "Content-Type",  "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ inputs: { nome_cliente: $json.nome, produto: $json.produto, valor: $json.valor.toString(), data_pix: $json.data_pix }, query: 'O aluno tentou comprar mas o PIX expirou. Gere uma mensagem de recuperação urgente oferecendo ajuda para finalizar a compra.', response_mode: 'blocking', conversation_id: '', user: $json.whatsapp }) }}",
+        "options": {
+          "failOnStatusCode": false
+        }
+      }
+    },
+    {
+      "id": "w4-node-005",
+      "name": "Dify respondeu?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 400],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "cond-dify-answer",
+              "leftValue": "={{ $json.answer }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w4-node-006",
+      "name": "Z-API — Enviar Aluno",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 280],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.z-api.io/instances/{{ $env.ZAPI_INSTANCE_ID }}/token/{{ $env.ZAPI_TOKEN }}/send-text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Client-Token",  "value": "={{ $env.ZAPI_CLIENT_TOKEN }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ phone: '55' + $('Loop por Aluno').item.json.whatsapp, message: $('Dify — SDR IA').item.json.answer }) }}",
+        "options": {
+          "failOnStatusCode": false
+        }
+      }
+    },
+    {
+      "id": "w4-node-007",
+      "name": "Z-API — Erro Dify (notificar)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 520],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.z-api.io/instances/{{ $env.ZAPI_INSTANCE_ID }}/token/{{ $env.ZAPI_TOKEN }}/send-text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Client-Token",  "value": "={{ $env.ZAPI_CLIENT_TOKEN }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ phone: $env.OPERADOR_WHATSAPP, message: '⚠️ Erro no Fluxo Carrinho Abandonado: o Dify não retornou resposta.\\nAluno: ' + $('Loop por Aluno').item.json.nome + ' (' + $('Loop por Aluno').item.json.whatsapp + ')\\nResposta Dify: ' + JSON.stringify($('Dify — SDR IA').item.json) }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "w4-node-008",
+      "name": "Supabase — Update SDR",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1560, 280],
+      "parameters": {
+        "operation": "update",
+        "tableId": "alunos",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "whatsapp",
+              "condition": "eq",
+              "keyValue": "={{ $('Loop por Aluno').item.json.whatsapp }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "ultimo_contato_sdr",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron — A cada hora": {
+      "main": [
+        [{ "node": "Supabase — Buscar PIX Abandonados", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Buscar PIX Abandonados": {
+      "main": [
+        [{ "node": "Loop por Aluno", "type": "main", "index": 0 }]
+      ]
+    },
+    "Loop por Aluno": {
+      "main": [
+        [{ "node": "Dify — SDR IA", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Dify — SDR IA": {
+      "main": [
+        [{ "node": "Dify respondeu?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Dify respondeu?": {
+      "main": [
+        [{ "node": "Z-API — Enviar Aluno",         "type": "main", "index": 0 }],
+        [{ "node": "Z-API — Erro Dify (notificar)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Z-API — Enviar Aluno": {
+      "main": [
+        [{ "node": "Supabase — Update SDR", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Update SDR": {
+      "main": [
+        [{ "node": "Loop por Aluno", "type": "main", "index": 0 }]
+      ]
+    },
+    "Z-API — Erro Dify (notificar)": {
+      "main": [
+        [{ "node": "Loop por Aluno", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
