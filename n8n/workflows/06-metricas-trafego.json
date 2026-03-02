@@ -1,0 +1,287 @@
+{
+  "name": "06 — Métricas de Tráfego (Meta + Google)",
+  "active": false,
+  "nodes": [
+    {
+      "id": "w6-note-001",
+      "name": "Nota — Configuração",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 60],
+      "parameters": {
+        "content": "## Fluxo 06 — Métricas de Tráfego\n\n**Variáveis de ambiente necessárias (n8n Settings → Variables):**\n- `META_ACCESS_TOKEN` — Meta for Developers → Explorador API Graph\n- `META_AD_ACCOUNT_ID` — Business Manager (ex: `act_XXXXXXXXX`)\n- `GOOGLE_ADS_ACCESS_TOKEN` — OAuth2 access token da conta Google Ads\n- `GOOGLE_ADS_DEVELOPER_TOKEN` — Google Ads API Center → conta MCC\n- `GOOGLE_ADS_CUSTOMER_ID` — ID da conta Google Ads (sem hífens)\n- `GOOGLE_ADS_MCC_ID` — ID da conta MCC (se gerenciar múltiplas contas)\n- `SUPABASE_URL` — URL do projeto Supabase (ex: https://xxx.supabase.co)\n- `SUPABASE_SERVICE_ROLE_KEY` — Service Role Key do Supabase\n\n**Gatilho:** Cron — todo dia às 08:00 (coleta métricas do dia anterior)\n\n**Lógica:** Busca campanhas do Meta Ads (Graph API) e Google Ads (GAQL),\nnormaliza os dados e faz upsert em `campanhas_metricas` via Supabase REST API.\nAo final envia resumo ao operador via Z-API.",
+        "height": 220,
+        "width": 2400
+      }
+    },
+    {
+      "id": "w6-node-001",
+      "name": "Cron — Diário 08h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 420],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "w6-node-002",
+      "name": "Meta Ads — Buscar Métricas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 420],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.META_AD_ACCOUNT_ID }}/campaigns",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "fields",       "value": "name,insights{spend,impressions,clicks,actions}" },
+            { "name": "date_preset",  "value": "yesterday" },
+            { "name": "access_token", "value": "={{ $env.META_ACCESS_TOKEN }}" },
+            { "name": "limit",        "value": "100" }
+          ]
+        },
+        "options": {
+          "failOnStatusCode": false
+        }
+      }
+    },
+    {
+      "id": "w6-node-003",
+      "name": "Normalizar Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 420],
+      "parameters": {
+        "jsCode": "const campaigns = $input.first().json.data || [];\nreturn campaigns.map(campaign => {\n  const insights  = campaign.insights?.data?.[0] || {};\n  const actions   = insights.actions || [];\n  const leads     = actions.find(a => a.action_type === 'lead')?.value || 0;\n  const purchases = actions.find(a => a.action_type === 'purchase')?.value || 0;\n  return {\n    json: {\n      plataforma:      'meta',\n      campanha_id:     campaign.id,\n      campanha_nome:   campaign.name,\n      data_referencia: new Date(Date.now() - 86400000).toISOString().split('T')[0],\n      spend:           parseFloat(insights.spend || 0),\n      impressions:     parseInt(insights.impressions || 0),\n      clicks:          parseInt(insights.clicks || 0),\n      leads:           parseInt(leads),\n      conversoes:      parseInt(purchases)\n    }\n  };\n});"
+      }
+    },
+    {
+      "id": "w6-node-004",
+      "name": "Loop Campanhas Meta",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [900, 420],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "w6-node-005",
+      "name": "Supabase — Upsert Meta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 280],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/campanhas_metricas",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Prefer",        "value": "resolution=merge-duplicates" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ plataforma: $json.plataforma, campanha_id: $json.campanha_id, campanha_nome: $json.campanha_nome, data_referencia: $json.data_referencia, spend: $json.spend, impressions: $json.impressions, clicks: $json.clicks, leads: $json.leads, conversoes: $json.conversoes }) }}",
+        "options": {
+          "failOnStatusCode": false
+        }
+      }
+    },
+    {
+      "id": "w6-node-006",
+      "name": "Agregar Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 560],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst spend_total  = items.reduce((s, i) => s + (parseFloat(i.json.spend)  || 0), 0);\nconst leads_total  = items.reduce((s, i) => s + (parseInt(i.json.leads)    || 0), 0);\nconst cpl = leads_total > 0 ? (spend_total / leads_total).toFixed(2) : null;\nreturn [{ json: { meta_spend_total: spend_total.toFixed(2), meta_leads_total: leads_total, meta_cpl: cpl } }];"
+      }
+    },
+    {
+      "id": "w6-node-007",
+      "name": "Google Ads — Buscar Métricas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 560],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://googleads.googleapis.com/v16/customers/{{ $env.GOOGLE_ADS_CUSTOMER_ID }}/googleAds:search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization",    "value": "=Bearer {{ $env.GOOGLE_ADS_ACCESS_TOKEN }}" },
+            { "name": "developer-token",  "value": "={{ $env.GOOGLE_ADS_DEVELOPER_TOKEN }}" },
+            { "name": "login-customer-id","value": "={{ $env.GOOGLE_ADS_MCC_ID }}" },
+            { "name": "Content-Type",     "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: 'SELECT campaign.id, campaign.name, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions FROM campaign WHERE segments.date DURING YESTERDAY' }) }}",
+        "options": {
+          "failOnStatusCode": false
+        }
+      }
+    },
+    {
+      "id": "w6-node-008",
+      "name": "Normalizar Google",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 560],
+      "parameters": {
+        "jsCode": "const rows = $input.first().json.results || [];\nreturn rows.map(row => ({\n  json: {\n    plataforma:      'google',\n    campanha_id:     row.campaign.id,\n    campanha_nome:   row.campaign.name,\n    data_referencia: new Date(Date.now() - 86400000).toISOString().split('T')[0],\n    spend:           parseFloat((row.metrics.costMicros || 0) / 1000000),\n    impressions:     parseInt(row.metrics.impressions  || 0),\n    clicks:          parseInt(row.metrics.clicks       || 0),\n    leads:           0,\n    conversoes:      parseInt(row.metrics.conversions  || 0)\n  }\n}));"
+      }
+    },
+    {
+      "id": "w6-node-009",
+      "name": "Loop Campanhas Google",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1780, 560],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "w6-node-010",
+      "name": "Supabase — Upsert Google",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 420],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/campanhas_metricas",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type",  "value": "application/json" },
+            { "name": "Prefer",        "value": "resolution=merge-duplicates" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ plataforma: $json.plataforma, campanha_id: $json.campanha_id, campanha_nome: $json.campanha_nome, data_referencia: $json.data_referencia, spend: $json.spend, impressions: $json.impressions, clicks: $json.clicks, leads: $json.leads, conversoes: $json.conversoes }) }}",
+        "options": {
+          "failOnStatusCode": false
+        }
+      }
+    },
+    {
+      "id": "w6-node-011",
+      "name": "Agregar Google",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 700],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst spend_total     = items.reduce((s, i) => s + (parseFloat(i.json.spend)     || 0), 0);\nconst conversoes_total = items.reduce((s, i) => s + (parseInt(i.json.conversoes) || 0), 0);\nconst cpa = conversoes_total > 0 ? (spend_total / conversoes_total).toFixed(2) : null;\nreturn [{ json: { google_spend_total: spend_total.toFixed(2), google_conversoes_total: conversoes_total, google_cpa: cpa } }];"
+      }
+    },
+    {
+      "id": "w6-node-012",
+      "name": "Z-API — Notificar Operador",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2220, 700],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.z-api.io/instances/{{ $env.ZAPI_INSTANCE_ID }}/token/{{ $env.ZAPI_TOKEN }}/send-text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Client-Token", "value": "={{ $env.ZAPI_CLIENT_TOKEN }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ phone: $env.OPERADOR_WHATSAPP, message: '📊 *Métricas de Tráfego — ' + new Date(Date.now() - 86400000).toLocaleDateString('pt-BR') + '*\\\\n\\\\nMeta Ads:\\\\n• Investimento: R$ ' + $('Agregar Meta').first().json.meta_spend_total + '\\\\n• Leads: ' + $('Agregar Meta').first().json.meta_leads_total + '\\\\n• CPL: ' + ($('Agregar Meta').first().json.meta_cpl ? 'R$ ' + $('Agregar Meta').first().json.meta_cpl : 'N/A') + '\\\\n\\\\nGoogle Ads:\\\\n• Investimento: R$ ' + $json.google_spend_total + '\\\\n• Conversões: ' + $json.google_conversoes_total + '\\\\n• CPA: ' + ($json.google_cpa ? 'R$ ' + $json.google_cpa : 'N/A') }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Cron — Diário 08h": {
+      "main": [
+        [{ "node": "Meta Ads — Buscar Métricas", "type": "main", "index": 0 }]
+      ]
+    },
+    "Meta Ads — Buscar Métricas": {
+      "main": [
+        [{ "node": "Normalizar Meta", "type": "main", "index": 0 }]
+      ]
+    },
+    "Normalizar Meta": {
+      "main": [
+        [{ "node": "Loop Campanhas Meta", "type": "main", "index": 0 }]
+      ]
+    },
+    "Loop Campanhas Meta": {
+      "main": [
+        [{ "node": "Supabase — Upsert Meta",  "type": "main", "index": 0 }],
+        [{ "node": "Agregar Meta",             "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Upsert Meta": {
+      "main": [
+        [{ "node": "Loop Campanhas Meta", "type": "main", "index": 0 }]
+      ]
+    },
+    "Agregar Meta": {
+      "main": [
+        [{ "node": "Google Ads — Buscar Métricas", "type": "main", "index": 0 }]
+      ]
+    },
+    "Google Ads — Buscar Métricas": {
+      "main": [
+        [{ "node": "Normalizar Google", "type": "main", "index": 0 }]
+      ]
+    },
+    "Normalizar Google": {
+      "main": [
+        [{ "node": "Loop Campanhas Google", "type": "main", "index": 0 }]
+      ]
+    },
+    "Loop Campanhas Google": {
+      "main": [
+        [{ "node": "Supabase — Upsert Google", "type": "main", "index": 0 }],
+        [{ "node": "Agregar Google",           "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Upsert Google": {
+      "main": [
+        [{ "node": "Loop Campanhas Google", "type": "main", "index": 0 }]
+      ]
+    },
+    "Agregar Google": {
+      "main": [
+        [{ "node": "Z-API — Notificar Operador", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

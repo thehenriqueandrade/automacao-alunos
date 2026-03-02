@@ -41,8 +41,8 @@ Pagtrust ──► n8n Fluxo 01 (Webhook Receiver)
 ```
 dify/apps/sdr-ia/           # Prompt e knowledge base do agente SDR
 dify/apps/tutor-ia/         # Prompt e knowledge base do agente Tutor
-n8n/workflows/              # Exports JSON dos 5 fluxos
-supabase/migrations/        # 4 migrations SQL em ordem de execução
+n8n/workflows/              # Exports JSON dos 6 fluxos
+supabase/migrations/        # 5 migrations SQL em ordem de execução
 supabase/seeds/             # Dados de referência (11 produtos) e teste
 docs/fluxos/                # Documentação detalhada de cada fluxo n8n
 scripts/                    # Utilitários de setup e teste
@@ -57,6 +57,7 @@ scripts/                    # Utilitários de setup e teste
 | `03-acompanhamento-tutor.json` | Cron — toda segunda 09h | Consulta `v_alunos_tutor_acompanhamento`, chama Dify Tutor, envia via Z-API, registra em `historico_contatos` |
 | `04-carrinho-abandonado.json` | Cron — a cada hora | Consulta `v_pix_abandonados`, chama Dify SDR com urgência PIX, envia via Z-API |
 | `05-upsell-concluidos.json` | Webhook manual `/upsell-trigger` | Consulta `v_alunos_upsell` (máx 30), chama Dify SDR com oferta exclusiva, envia via Z-API |
+| `06-metricas-trafego.json` | Cron — todo dia 08h | Coleta métricas do dia anterior no Meta Ads e Google Ads, faz upsert em `campanhas_metricas`, notifica operador |
 
 ## Banco de dados
 
@@ -67,6 +68,7 @@ scripts/                    # Utilitários de setup e teste
 - **`transacoes`** — chave única: `order_id`; `dados_raw` (JSONB) guarda payload bruto; `metodo_pagamento` (enum).
 - **`aluno_produtos`** — N:N entre alunos e produtos; `progresso_pct` (0–100), `ultimo_acesso`; UNIQUE(aluno_id, produto_id). Substitui `progresso_aulas`.
 - **`historico_contatos`** — log de mensagens enviadas; campos: aluno_id, tipo (sdr | tutor | carrinho_abandonado | upsell), mensagem_enviada, respondeu.
+- **`campanhas_metricas`** — métricas diárias de tráfego pago; chave única: (plataforma, campanha_id, data_referencia); campos: spend, impressions, clicks, leads, conversoes.
 
 ### Enums
 
@@ -83,6 +85,9 @@ scripts/                    # Utilitários de setup e teste
 | `v_pix_abandonados` | Fluxo 04 | PIX não aprovados entre 1h–24h, aluno não contatado nas últimas 24h |
 | `v_metricas_dashboard` | Dashboard | Snapshot de totais por status e contatos da semana |
 | `v_conversao_por_produto` | Dashboard | Taxa de conclusão e progresso médio por produto |
+| `v_roas_por_campanha` | Looker Studio | Spend, CPL, CPA e ROAS por campanha e dia |
+| `v_funil_completo` | Looker Studio | Funil compra → acesso → engajamento → conclusão por dia |
+| `v_resumo_diario` | Looker Studio | Vendas, faturamento, investimento e ROAS geral por dia |
 
 ### Cooldown anti-spam
 
@@ -111,6 +116,7 @@ As views SDR e Tutor aplicam **cross-cooldown de 7 dias**: um aluno é excluído
 002_cooldown_antispam.sql   # Reescreve views SDR/Tutor com cooldown; add v_pix_abandonados
 003_historico_contatos.sql  # Tabela historico_contatos com RLS
 004_view_metricas.sql       # Views de dashboard: v_metricas_dashboard, v_conversao_por_produto
+005_trafego_dashboard.sql   # Tabela campanhas_metricas + views de tráfego para Looker Studio
 ```
 
 ## Comandos úteis
@@ -126,11 +132,24 @@ As views SDR e Tutor aplicam **cross-cooldown de 7 dias**: um aluno é excluído
 ## Configuração de ambiente
 
 Copie `.env.example` para `.env` e preencha:
+
+**Core (todos os fluxos):**
 - `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`
 - `DIFY_BASE_URL` + `DIFY_API_KEY_SDR` + `DIFY_API_KEY_TUTOR`
 - `ZAPI_INSTANCE_ID` + `ZAPI_TOKEN` + `ZAPI_CLIENT_TOKEN`
 - `OPERADOR_WHATSAPP` — WhatsApp pessoal que recebe alertas de erro dos fluxos
 - `TUTOR_DIAS_SEM_ACESSO` — mínimo de dias de ausência para o Tutor disparar (padrão: 7)
+
+**Fluxo 06 — Tráfego (Meta Ads + Google Ads):**
+
+| Variável | Como obter |
+|----------|-----------|
+| `META_ACCESS_TOKEN` | Meta for Developers → Explorador API Graph |
+| `META_AD_ACCOUNT_ID` | Business Manager → URL do Ads Manager (`act_XXXXXXXXX`) |
+| `GOOGLE_ADS_ACCESS_TOKEN` | OAuth2 já configurado — access_token da conta |
+| `GOOGLE_ADS_DEVELOPER_TOKEN` | Google Ads API Center → conta MCC |
+| `GOOGLE_ADS_CUSTOMER_ID` | ID da conta Google Ads (sem hífens) |
+| `GOOGLE_ADS_MCC_ID` | ID da conta MCC (se usar conta de administrador) |
 
 ## Monitoramento de erros (padrão obrigatório)
 
