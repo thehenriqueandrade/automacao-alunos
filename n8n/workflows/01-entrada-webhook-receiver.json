@@ -29,65 +29,81 @@
       }
     },
     {
-      "id": "w1-node-002",
-      "name": "Normalizar Campos",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [460, 380],
-      "parameters": {
-        "mode": "manual",
-        "fields": {
-          "values": [
-            {
-              "name": "nome",
-              "type": "stringValue",
-              "stringValue": "={{ $json.body.data.buyer.name }}"
-            },
-            {
-              "name": "whatsapp",
-              "type": "stringValue",
-              "stringValue": "={{ $json.body.data.buyer.checkout_phone.toString().replace(/\\D/g, '') }}"
-            },
-            {
-              "name": "email",
-              "type": "stringValue",
-              "stringValue": "={{ $json.body.data.buyer.email }}"
-            },
-            {
-              "name": "order_id",
-              "type": "stringValue",
-              "stringValue": "={{ $json.body.orderId }}"
-            },
-            {
-              "name": "valor",
-              "type": "numberValue",
-              "numberValue": "={{ $json.body.data.purchase.full_price.value }}"
-            },
-            {
-              "name": "status",
-              "type": "stringValue",
-              "stringValue": "={{ $json.body.data.purchase.status }}"
-            },
-            {
-              "name": "event",
-              "type": "stringValue",
-              "stringValue": "={{ $json.body.event }}"
-            },
-            {
-              "name": "produto",
-              "type": "stringValue",
-              "stringValue": "={{ $json.body.data.product.name }}"
-            },
-            {
-              "name": "dados_raw",
-              "type": "objectValue",
-              "objectValue": "={{ $json.body }}"
-            }
-          ]
+      
+  "id": "w1-node-002",
+  "name": "Normalizar Campos",
+  "type": "n8n-nodes-base.set",
+  "typeVersion": 3.4,
+  "position": [460, 380],
+  "parameters": {
+    "mode": "manual",
+    "fields": {
+      "values": [
+        {
+          "name": "nome",
+          "type": "stringValue",
+          "stringValue": "={{ $json.body.data.buyer.name }}"
         },
-        "options": {}
-      }
+        {
+          "name": "whatsapp",
+          "type": "stringValue",
+          "stringValue": "={{ $json.body.data.buyer.checkout_phone?.toString().replace(/\\D/g, '') ?? null }}"
+        },
+        {
+          "name": "email",
+          "type": "stringValue",
+          "stringValue": "={{ $json.body.data.buyer.email }}"
+        },
+        {
+          "name": "cidade",
+          "type": "stringValue",
+          "stringValue": "={{ $json.body.data.buyer.address?.city ?? null }}"
+        },
+        {
+          "name": "estado",
+          "type": "stringValue",
+          "stringValue": "={{ $json.body.data.buyer.address?.state ?? null }}"
+        },
+        {
+          "name": "order_id",
+          "type": "stringValue",
+          "stringValue": "={{ $json.body.data.purchase.transaction }}"
+        },
+        {
+          "name": "valor",
+          "type": "numberValue",
+          "numberValue": "={{ $json.body.data.purchase.price.value }}"
+        },
+        {
+          "name": "metodo_pagamento",
+          "type": "stringValue",
+          "stringValue": "={{ $json.body.data.purchase.payment.type }}"
+        },
+        {
+          "name": "status",
+          "type": "stringValue",
+          "stringValue": "={{ $json.body.data.purchase.status }}"
+        },
+        {
+          "name": "event",
+          "type": "stringValue",
+          "stringValue": "={{ $json.body.event }}"
+        },
+        {
+          "name": "produto",
+          "type": "stringValue",
+          "stringValue": "={{ $json.body.data.product.name }}"
+        },
+        {
+          "name": "dados_raw",
+          "type": "objectValue",
+          "objectValue": "={{ $json.body }}"
+        }
+      ]
     },
+    "options": {}
+  }
+},
     {
       "id": "w1-node-003",
       "name": "Supabase — Create Aluno",
