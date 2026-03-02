@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Projeto
 
-**automacao-alunos** — sistema de automação de comunicação com alunos usando IA, composto por agentes SDR e Tutor orquestrados via n8n, com Dify como backend de IA e Supabase como banco de dados de estado.
+**automacao-alunos** — sistema de automação de comunicação com alunos usando IA, composto por agentes SDR e Tutor orquestrados via n8n, com Dify como backend de IA e Supabase como banco de dados de estado. Integrado com Hotmart (checkout e progresso via API).
 
 **Dados reais (base de produção):**
 - 876 alunos cadastrados (871 com WhatsApp)
@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **n8n** — orquestrador de fluxos e receptor de webhooks.
 - **Supabase** — banco `jornada_alunos`.
 - **Z-API** — canal único de saída via WhatsApp.
-- **Pagtrust** — fonte dos eventos de compra.
+- **Hotmart** — fonte dos eventos de compra (webhook `PURCHASE_COMPLETE`) e API de progresso de alunos.
 
 ## Arquitetura em camadas
 
@@ -41,8 +41,8 @@ Pagtrust ──► n8n Fluxo 01 (Webhook Receiver)
 ```
 dify/apps/sdr-ia/           # Prompt e knowledge base do agente SDR
 dify/apps/tutor-ia/         # Prompt e knowledge base do agente Tutor
-n8n/workflows/              # Exports JSON dos 6 fluxos
-supabase/migrations/        # 5 migrations SQL em ordem de execução
+n8n/workflows/              # Exports JSON dos 7 fluxos
+supabase/migrations/        # 6 migrations SQL em ordem de execução
 supabase/seeds/             # Dados de referência (11 produtos) e teste
 docs/fluxos/                # Documentação detalhada de cada fluxo n8n
 scripts/                    # Utilitários de setup e teste
@@ -52,12 +52,13 @@ scripts/                    # Utilitários de setup e teste
 
 | Arquivo | Gatilho | Função |
 |---------|---------|--------|
-| `01-entrada-webhook-receiver.json` | POST da Pagtrust | Upsert aluno (por email) e produto (por nome), persiste transação e cria aluno_produtos |
+| `01-entrada-webhook-receiver.json` | POST da Hotmart (`PURCHASE_COMPLETE`) | Filtra evento, upsert aluno (por email) e produto (por nome), persiste transação com `metodo_pagamento`, cria aluno_produtos |
 | `02-vendas-sdr.json` | Webhook `/sdr-trigger` | Consulta `v_alunos_sdr_prioridade`, chama Dify SDR, envia via Z-API, registra em `historico_contatos` |
 | `03-acompanhamento-tutor.json` | Cron — toda segunda 09h | Consulta `v_alunos_tutor_acompanhamento`, chama Dify Tutor, envia via Z-API, registra em `historico_contatos` |
 | `04-carrinho-abandonado.json` | Cron — a cada hora | Consulta `v_pix_abandonados`, chama Dify SDR com urgência PIX, envia via Z-API |
 | `05-upsell-concluidos.json` | Webhook manual `/upsell-trigger` | Consulta `v_alunos_upsell` (máx 30), chama Dify SDR com oferta exclusiva, envia via Z-API |
 | `06-metricas-trafego.json` | Cron — todo dia 08h | Coleta métricas do dia anterior no Meta Ads e Google Ads, faz upsert em `campanhas_metricas`, notifica operador |
+| `07-sync-progresso-hotmart.json` | Cron — todo dia 06h | Para cada produto com `hotmart_product_id`, busca progresso via API Hotmart, atualiza `aluno_produtos` e `status_aluno` |
 
 ## Banco de dados
 
@@ -69,6 +70,8 @@ scripts/                    # Utilitários de setup e teste
 - **`aluno_produtos`** — N:N entre alunos e produtos; `progresso_pct` (0–100), `ultimo_acesso`; UNIQUE(aluno_id, produto_id). Substitui `progresso_aulas`.
 - **`historico_contatos`** — log de mensagens enviadas; campos: aluno_id, tipo (sdr | tutor | carrinho_abandonado | upsell), mensagem_enviada, respondeu.
 - **`campanhas_metricas`** — métricas diárias de tráfego pago; chave única: (plataforma, campanha_id, data_referencia); campos: spend, impressions, clicks, leads, conversoes.
+
+> **Campo adicional em `produtos`:** `hotmart_product_id TEXT` (migration 006). Obrigatório para o Fluxo 07 sincronizar progresso.
 
 ### Enums
 
@@ -93,21 +96,24 @@ scripts/                    # Utilitários de setup e teste
 
 As views SDR e Tutor aplicam **cross-cooldown de 7 dias**: um aluno é excluído se foi contatado por qualquer agente (SDR ou Tutor) nos últimos 7 dias. A view PIX usa cooldown de 24h exclusivo para o campo `ultimo_contato_sdr`.
 
-### Payload real da Pagtrust
+### Payload da Hotmart (`PURCHASE_COMPLETE`)
 
 | Campo no payload | Campo interno |
 |------------------|---------------|
 | `body.data.buyer.name` | `nome` |
 | `body.data.buyer.checkout_phone` (só dígitos) | `whatsapp` |
 | `body.data.buyer.email` | `email` |
-| `body.orderId` | `order_id` |
-| `body.data.purchase.full_price.value` | `valor` |
+| `body.data.buyer.address.city` | `cidade` |
+| `body.data.buyer.address.state` | `estado` |
+| `body.data.purchase.transaction` | `order_id` |
+| `body.data.purchase.price.value` | `valor` |
+| `body.data.purchase.payment.type` | `metodo_pagamento` |
 | `body.data.purchase.status` | `status` |
 | `body.event` | `event` |
 | `body.data.product.name` | `produto` |
 | `body` (objeto inteiro) | `dados_raw` |
 
-> **Atenção:** `order_id` vem de `body.orderId` (raiz do payload), não de `body.data.purchase.transaction`.
+> **Atenção:** O fluxo filtra apenas `event = PURCHASE_COMPLETE`. Outros eventos são ignorados silenciosamente.
 
 ## Migrations (ordem de execução)
 
@@ -117,6 +123,7 @@ As views SDR e Tutor aplicam **cross-cooldown de 7 dias**: um aluno é excluído
 003_historico_contatos.sql  # Tabela historico_contatos com RLS
 004_view_metricas.sql       # Views de dashboard: v_metricas_dashboard, v_conversao_por_produto
 005_trafego_dashboard.sql   # Tabela campanhas_metricas + views de tráfego para Looker Studio
+006_hotmart_product_id.sql  # ALTER TABLE produtos ADD COLUMN hotmart_product_id TEXT
 ```
 
 ## Comandos úteis
@@ -139,6 +146,12 @@ Copie `.env.example` para `.env` e preencha:
 - `ZAPI_INSTANCE_ID` + `ZAPI_TOKEN` + `ZAPI_CLIENT_TOKEN`
 - `OPERADOR_WHATSAPP` — WhatsApp pessoal que recebe alertas de erro dos fluxos
 - `TUTOR_DIAS_SEM_ACESSO` — mínimo de dias de ausência para o Tutor disparar (padrão: 7)
+
+**Fluxo 07 — Sync Hotmart:**
+
+| Variável | Como obter |
+|----------|-----------|
+| `HOTMART_BASIC_TOKEN` | Base64 de `client_id:client_secret` — Hotmart → Ferramentas → Credenciais API |
 
 **Fluxo 06 — Tráfego (Meta Ads + Google Ads):**
 

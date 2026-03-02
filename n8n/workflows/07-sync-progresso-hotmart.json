@@ -1,0 +1,410 @@
+{
+  "name": "07 — Sync: Progresso Hotmart",
+  "active": false,
+  "nodes": [
+    {
+      "id": "w7-note-001",
+      "name": "Nota — Configuração",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 60],
+      "parameters": {
+        "content": "## Fluxo 07 — Sincronização de Progresso (Hotmart)\n\n**Variáveis de ambiente necessárias (n8n Settings → Variables):**\n- `HOTMART_BASIC_TOKEN` — Base64 de `client_id:client_secret` (Hotmart → Ferramentas → Credenciais API)\n\n**Credencial necessária:** Supabase — jornada_alunos\n\n**Gatilho:** Cron — todo dia às 06:00 (antes do Tutor às 09:00)\n\n**Pré-requisito:** Migration 006 executada e `hotmart_product_id` preenchido nos 11 produtos.\n\n**Lógica:**\n1. Busca todos os produtos com `hotmart_product_id` definido\n2. Para cada produto: obtém access_token OAuth e consulta progresso via API Hotmart\n3. Para cada aluno retornado: calcula status_aluno pelo progresso\n4. Atualiza `aluno_produtos` (progresso_pct, ultimo_acesso) e `alunos` (status_aluno)\n5. Alunos não cadastrados no Supabase são ignorados silenciosamente\n\n**Regras de status:**\n  0% sem acesso → nunca_acessou · 0% com acesso → inativo\n  1–29% → iniciante · 30–69% → em_andamento\n  70–99% → quase_concluindo · 100% → concluido",
+        "height": 280,
+        "width": 2800
+      }
+    },
+    {
+      "id": "w7-node-001",
+      "name": "Cron — Diário 06h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 460],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 6,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "w7-node-002",
+      "name": "Supabase — Buscar Produtos Ativos",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 460],
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "produtos",
+        "returnAll": true
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w7-node-003",
+      "name": "Loop por Produto",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [680, 460],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "w7-node-004",
+      "name": "Tem hotmart_product_id?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 460],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "cond-product-id",
+              "leftValue": "={{ $json.hotmart_product_id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w7-node-005",
+      "name": "Hotmart — Gerar Access Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 320],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://api-sec-vlc.hotmart.com/security/oauth/token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Basic {{ $env.HOTMART_BASIC_TOKEN }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "grant_type", "value": "client_credentials" }
+          ]
+        },
+        "options": {
+          "failOnStatusCode": false
+        }
+      }
+    },
+    {
+      "id": "w7-node-006",
+      "name": "Hotmart — Buscar Progresso",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 320],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "https://developers.hotmart.com/club/api/v1/pages/progress",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.access_token }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "product_id",  "value": "={{ $('Loop por Produto').item.json.hotmart_product_id }}" },
+            { "name": "max_results", "value": "100" }
+          ]
+        },
+        "options": {
+          "failOnStatusCode": false
+        }
+      }
+    },
+    {
+      "id": "w7-node-007",
+      "name": "Extrair Alunos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 320],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst items = response.items || [];\n\n// Se não há dados, retorna item sentinela para a branch FALSE de 'Tem dados?'\nif (items.length === 0) {\n  return [{ json: { subscriber_email: null, skip: true } }];\n}\n\nreturn items.map(student => ({ json: { ...student, skip: false } }));"
+      }
+    },
+    {
+      "id": "w7-node-008",
+      "name": "Tem dados?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 320],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "cond-tem-dados",
+              "leftValue": "={{ $json.subscriber_email }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w7-node-009",
+      "name": "Loop por Aluno",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [2000, 180],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "w7-node-010",
+      "name": "Calcular Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 180],
+      "parameters": {
+        "jsCode": "const progresso = $json.progress_percentage || 0;\nconst temAcesso = $json.last_access_date != null;\n\nlet status;\nif (progresso === 0 && !temAcesso) {\n  status = 'nunca_acessou';\n} else if (progresso === 0) {\n  status = 'inativo';\n} else if (progresso < 30) {\n  status = 'iniciante';\n} else if (progresso < 70) {\n  status = 'em_andamento';\n} else if (progresso < 100) {\n  status = 'quase_concluindo';\n} else {\n  status = 'concluido';\n}\n\nreturn [{\n  json: {\n    email:        $json.subscriber_email,\n    progresso_pct: Math.round(progresso),\n    ultimo_acesso: $json.last_access_date || null,\n    status_aluno:  status\n  }\n}];"
+      }
+    },
+    {
+      "id": "w7-node-011",
+      "name": "Supabase — Buscar Aluno por Email",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2440, 180],
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "alunos",
+        "returnAll": false,
+        "limit": 1,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "email",
+              "condition": "eq",
+              "keyValue": "={{ $json.email }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w7-node-012",
+      "name": "Aluno existe?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2660, 180],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "cond-aluno-existe",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w7-node-013",
+      "name": "Supabase — Update aluno_produtos",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2880, 60],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "update",
+        "tableId": "aluno_produtos",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "aluno_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            },
+            {
+              "keyName": "produto_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Loop por Produto').item.json.id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "progresso_pct", "fieldValue": "={{ $('Calcular Status').item.json.progresso_pct }}" },
+            { "fieldId": "ultimo_acesso", "fieldValue": "={{ $('Calcular Status').item.json.ultimo_acesso }}" }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w7-node-014",
+      "name": "Supabase — Update alunos",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [3100, 60],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "update",
+        "tableId": "alunos",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "email",
+              "condition": "eq",
+              "keyValue": "={{ $('Calcular Status').item.json.email }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "status_aluno", "fieldValue": "={{ $('Calcular Status').item.json.status_aluno }}" }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase — jornada_alunos"
+        }
+      }
+    },
+    {
+      "id": "w7-node-015",
+      "name": "Próximo Produto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 460],
+      "parameters": {
+        "jsCode": "// Sinaliza fim do loop interno para avançar para o próximo produto\nreturn [{ json: { next_product: true } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Cron — Diário 06h": {
+      "main": [
+        [{ "node": "Supabase — Buscar Produtos Ativos", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Buscar Produtos Ativos": {
+      "main": [
+        [{ "node": "Loop por Produto", "type": "main", "index": 0 }]
+      ]
+    },
+    "Loop por Produto": {
+      "main": [
+        [{ "node": "Tem hotmart_product_id?", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Tem hotmart_product_id?": {
+      "main": [
+        [{ "node": "Hotmart — Gerar Access Token", "type": "main", "index": 0 }],
+        [{ "node": "Loop por Produto",             "type": "main", "index": 0 }]
+      ]
+    },
+    "Hotmart — Gerar Access Token": {
+      "main": [
+        [{ "node": "Hotmart — Buscar Progresso", "type": "main", "index": 0 }]
+      ]
+    },
+    "Hotmart — Buscar Progresso": {
+      "main": [
+        [{ "node": "Extrair Alunos", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extrair Alunos": {
+      "main": [
+        [{ "node": "Tem dados?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Tem dados?": {
+      "main": [
+        [{ "node": "Loop por Aluno",  "type": "main", "index": 0 }],
+        [{ "node": "Loop por Produto", "type": "main", "index": 0 }]
+      ]
+    },
+    "Loop por Aluno": {
+      "main": [
+        [{ "node": "Calcular Status", "type": "main", "index": 0 }],
+        [{ "node": "Próximo Produto", "type": "main", "index": 0 }]
+      ]
+    },
+    "Calcular Status": {
+      "main": [
+        [{ "node": "Supabase — Buscar Aluno por Email", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Buscar Aluno por Email": {
+      "main": [
+        [{ "node": "Aluno existe?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aluno existe?": {
+      "main": [
+        [{ "node": "Supabase — Update aluno_produtos", "type": "main", "index": 0 }],
+        [{ "node": "Loop por Aluno",                   "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Update aluno_produtos": {
+      "main": [
+        [{ "node": "Supabase — Update alunos", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase — Update alunos": {
+      "main": [
+        [{ "node": "Loop por Aluno", "type": "main", "index": 0 }]
+      ]
+    },
+    "Próximo Produto": {
+      "main": [
+        [{ "node": "Loop por Produto", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

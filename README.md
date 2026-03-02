@@ -1,8 +1,8 @@
 # automacao-alunos
 
-Sistema de automação de comunicação com alunos via WhatsApp, usando IA generativa para recuperação de vendas e retenção de alunos ativos. Inclui coleta de métricas de tráfego pago (Meta Ads + Google Ads) e dashboard no Looker Studio.
+Sistema de automação de comunicação com alunos via WhatsApp, usando IA generativa para recuperação de vendas e retenção de alunos ativos. Integrado com Hotmart para receber compras e sincronizar progresso. Inclui coleta de métricas de tráfego pago e dashboard no Looker Studio.
 
-**Stack:** n8n · Dify · Supabase · Z-API · Pagtrust · Meta Ads API · Google Ads API · Looker Studio
+**Stack:** n8n · Dify · Supabase · Z-API · Hotmart · Meta Ads API · Google Ads API · Looker Studio
 
 ---
 
@@ -23,12 +23,13 @@ Seis fluxos n8n trabalham de forma autônoma:
 
 | Fluxo | Gatilho | O que faz |
 |-------|---------|-----------|
-| **01 — Webhook Receiver** | POST da Pagtrust | Registra compra, aluno e produto no Supabase |
+| **01 — Webhook Receiver** | POST da Hotmart (`PURCHASE_COMPLETE`) | Registra compra, aluno (com cidade/estado) e produto no Supabase |
 | **02 — SDR IA** | Webhook externo | Aborda leads que nunca acessaram ou ficaram inativos |
 | **03 — Tutor IA** | Cron — toda segunda 09h | Reengaja alunos em progresso que pararam de acessar |
 | **04 — Carrinho Abandonado** | Cron — a cada hora | Recupera PIX expirados entre 1h e 24h |
 | **05 — Upsell** | Webhook manual | Oferece o próximo curso para quem já concluiu |
 | **06 — Métricas de Tráfego** | Cron — todo dia 08h | Coleta campanhas do Meta Ads e Google Ads; upsert em `campanhas_metricas` |
+| **07 — Sync Progresso Hotmart** | Cron — todo dia 06h | Sincroniza progresso de alunos via API Hotmart; atualiza `aluno_produtos` e `status_aluno` |
 
 ---
 
@@ -87,7 +88,10 @@ supabase/migrations/002_cooldown_antispam.sql
 supabase/migrations/003_historico_contatos.sql
 supabase/migrations/004_view_metricas.sql
 supabase/migrations/005_trafego_dashboard.sql
+supabase/migrations/006_hotmart_product_id.sql
 ```
+
+Após a migration 006, preencha o `hotmart_product_id` dos 11 produtos no Supabase (IDs obtidos no painel Hotmart).
 
 Depois execute o seed com os produtos reais:
 
@@ -109,6 +113,7 @@ Em **Settings → Variables**, configure:
 | `ZAPI_CLIENT_TOKEN` | Client-Token da conta Z-API |
 | `OPERADOR_WHATSAPP` | Seu WhatsApp com DDI (ex: `5511999990000`) |
 | `TUTOR_DIAS_SEM_ACESSO` | Dias mínimos de ausência para o Tutor disparar (padrão: `7`) |
+| `HOTMART_BASIC_TOKEN` | Base64 de `client_id:client_secret` (Hotmart → Ferramentas → Credenciais API) |
 | `SUPABASE_URL` | URL do projeto Supabase (ex: `https://xxx.supabase.co`) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service Role Key do Supabase (para upsert via REST no Fluxo 06) |
 | `META_ACCESS_TOKEN` | Meta for Developers → Explorador API Graph |
@@ -127,14 +132,16 @@ Em **Settings → Credentials → Add → Supabase**:
 
 ### 5. Importar e ativar os fluxos
 
-Importe os 6 arquivos de `n8n/workflows/` no n8n e ative cada um.
+Importe os 7 arquivos de `n8n/workflows/` no n8n e ative cada um.
 
-### 6. Configurar webhook na Pagtrust
+### 6. Configurar webhook na Hotmart
 
-Aponte o webhook da Pagtrust para:
+Aponte o webhook da Hotmart para:
 ```
-https://[seu-n8n]/webhook/pagtrust
+https://[seu-n8n]/webhook/hotmart
 ```
+
+Em **Hotmart → Ferramentas → Webhooks**, selecione o evento `PURCHASE_COMPLETE`.
 
 ---
 
@@ -148,6 +155,7 @@ n8n/workflows/
   04-carrinho-abandonado.json
   05-upsell-concluidos.json
   06-metricas-trafego.json
+  07-sync-progresso-hotmart.json
 
 supabase/migrations/
   001_schema.sql
@@ -155,6 +163,7 @@ supabase/migrations/
   003_historico_contatos.sql
   004_view_metricas.sql
   005_trafego_dashboard.sql
+  006_hotmart_product_id.sql
 
 supabase/seeds/
   seed.sql

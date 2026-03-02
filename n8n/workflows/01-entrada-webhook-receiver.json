@@ -1,5 +1,5 @@
 {
-  "name": "01 — Entrada: Webhook Receiver (Pagtrust)",
+  "name": "01 — Entrada: Webhook Receiver (Hotmart)",
   "active": false,
   "nodes": [
     {
@@ -9,107 +9,128 @@
       "typeVersion": 1,
       "position": [240, 60],
       "parameters": {
-        "content": "## Fluxo 01 — Webhook Receiver\n\n**Credencial necessária:** Supabase — jornada_alunos\n**Configurar em:** Settings → Credentials → Add → Supabase\n\n**Lógica aluno (upsert manual por email):**\n1. Tenta criar → se 409 (já existe), busca pelo email\n2. Merge garante que o id do aluno segue para as próximas etapas\n\n**Lógica produto (upsert manual por nome):**\n1. Tenta criar → se 409 (já existe), busca pelo nome\n2. Merge garante que o id do produto segue para criar aluno_produtos\n\n**URL do webhook:**\nhttps://[seu-n8n]/webhook/pagtrust",
-        "height": 220,
+        "content": "## Fluxo 01 — Webhook Receiver (Hotmart)\n\n**Credencial necessária:** Supabase — jornada_alunos\n**Configurar em:** Settings → Credentials → Add → Supabase\n\n**Filtro de evento:** processa apenas `PURCHASE_COMPLETE` (outros eventos são ignorados silenciosamente).\n\n**Lógica aluno (upsert manual por email):**\n1. Tenta criar → se 409 (já existe), busca pelo email\n2. Merge garante que o id do aluno segue para as próximas etapas\n\n**Lógica produto (upsert manual por nome):**\n1. Tenta criar → se 409 (já existe), busca pelo nome\n2. Merge garante que o id do produto segue para criar aluno_produtos\n\n**URL do webhook:**\nhttps://[seu-n8n]/webhook/hotmart",
+        "height": 240,
         "width": 900
       }
     },
     {
       "id": "w1-node-001",
-      "name": "Pagtrust — Webhook",
+      "name": "Hotmart — Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 380],
-      "webhookId": "pagtrust-entrada-001",
+      "position": [240, 400],
+      "webhookId": "hotmart-entrada-001",
       "parameters": {
         "httpMethod": "POST",
-        "path": "pagtrust",
+        "path": "hotmart",
         "responseMode": "onReceived",
         "options": {}
       }
     },
     {
-      
-  "id": "w1-node-002",
-  "name": "Normalizar Campos",
-  "type": "n8n-nodes-base.set",
-  "typeVersion": 3.4,
-  "position": [460, 380],
-  "parameters": {
-    "mode": "manual",
-    "fields": {
-      "values": [
-        {
-          "name": "nome",
-          "type": "stringValue",
-          "stringValue": "={{ $json.body.data.buyer.name }}"
+      "id": "w1-node-ev",
+      "name": "Evento Válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 400],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "cond-evento-valido",
+              "leftValue": "={{ $json.body.event }}",
+              "rightValue": "PURCHASE_COMPLETE",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
         },
-        {
-          "name": "whatsapp",
-          "type": "stringValue",
-          "stringValue": "={{ $json.body.data.buyer.checkout_phone?.toString().replace(/\\D/g, '') ?? null }}"
-        },
-        {
-          "name": "email",
-          "type": "stringValue",
-          "stringValue": "={{ $json.body.data.buyer.email }}"
-        },
-        {
-          "name": "cidade",
-          "type": "stringValue",
-          "stringValue": "={{ $json.body.data.buyer.address?.city ?? null }}"
-        },
-        {
-          "name": "estado",
-          "type": "stringValue",
-          "stringValue": "={{ $json.body.data.buyer.address?.state ?? null }}"
-        },
-        {
-          "name": "order_id",
-          "type": "stringValue",
-          "stringValue": "={{ $json.body.data.purchase.transaction }}"
-        },
-        {
-          "name": "valor",
-          "type": "numberValue",
-          "numberValue": "={{ $json.body.data.purchase.price.value }}"
-        },
-        {
-          "name": "metodo_pagamento",
-          "type": "stringValue",
-          "stringValue": "={{ $json.body.data.purchase.payment.type }}"
-        },
-        {
-          "name": "status",
-          "type": "stringValue",
-          "stringValue": "={{ $json.body.data.purchase.status }}"
-        },
-        {
-          "name": "event",
-          "type": "stringValue",
-          "stringValue": "={{ $json.body.event }}"
-        },
-        {
-          "name": "produto",
-          "type": "stringValue",
-          "stringValue": "={{ $json.body.data.product.name }}"
-        },
-        {
-          "name": "dados_raw",
-          "type": "objectValue",
-          "objectValue": "={{ $json.body }}"
-        }
-      ]
+        "options": {}
+      }
     },
-    "options": {}
-  }
-},
+    {
+      "id": "w1-node-002",
+      "name": "Normalizar Campos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [680, 400],
+      "parameters": {
+        "mode": "manual",
+        "fields": {
+          "values": [
+            {
+              "name": "nome",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body.data.buyer.name }}"
+            },
+            {
+              "name": "whatsapp",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body.data.buyer.checkout_phone?.toString().replace(/\\D/g, '') }}"
+            },
+            {
+              "name": "email",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body.data.buyer.email }}"
+            },
+            {
+              "name": "cidade",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body.data.buyer.address?.city ?? null }}"
+            },
+            {
+              "name": "estado",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body.data.buyer.address?.state ?? null }}"
+            },
+            {
+              "name": "order_id",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body.data.purchase.transaction }}"
+            },
+            {
+              "name": "valor",
+              "type": "numberValue",
+              "numberValue": "={{ $json.body.data.purchase.price.value }}"
+            },
+            {
+              "name": "metodo_pagamento",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body.data.purchase.payment.type }}"
+            },
+            {
+              "name": "status",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body.data.purchase.status }}"
+            },
+            {
+              "name": "event",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body.event }}"
+            },
+            {
+              "name": "produto",
+              "type": "stringValue",
+              "stringValue": "={{ $json.body.data.product.name }}"
+            },
+            {
+              "name": "dados_raw",
+              "type": "objectValue",
+              "objectValue": "={{ $json.body }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
     {
       "id": "w1-node-003",
       "name": "Supabase — Create Aluno",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [680, 380],
+      "position": [900, 400],
       "onError": "continueRegularOutput",
       "parameters": {
         "operation": "create",
@@ -118,7 +139,9 @@
           "fieldValues": [
             { "fieldId": "nome",     "fieldValue": "={{ $json.nome }}" },
             { "fieldId": "email",    "fieldValue": "={{ $json.email }}" },
-            { "fieldId": "whatsapp", "fieldValue": "={{ $json.whatsapp }}" }
+            { "fieldId": "whatsapp", "fieldValue": "={{ $json.whatsapp }}" },
+            { "fieldId": "cidade",   "fieldValue": "={{ $json.cidade }}" },
+            { "fieldId": "estado",   "fieldValue": "={{ $json.estado }}" }
           ]
         }
       },
@@ -134,7 +157,7 @@
       "name": "Aluno Criado?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [900, 380],
+      "position": [1120, 400],
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
@@ -156,7 +179,7 @@
       "name": "Supabase — Buscar Aluno",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [1120, 520],
+      "position": [1340, 540],
       "parameters": {
         "operation": "getAll",
         "tableId": "alunos",
@@ -184,7 +207,7 @@
       "name": "Merge — Aluno",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
-      "position": [1340, 380],
+      "position": [1560, 400],
       "parameters": {
         "mode": "append",
         "options": {}
@@ -195,18 +218,19 @@
       "name": "Supabase — Create Transação",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [1560, 380],
+      "position": [1780, 400],
       "onError": "continueRegularOutput",
       "parameters": {
         "operation": "create",
         "tableId": "transacoes",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "order_id",  "fieldValue": "={{ $('Normalizar Campos').item.json.order_id }}" },
-            { "fieldId": "aluno_id",  "fieldValue": "={{ $json.id }}" },
-            { "fieldId": "valor",     "fieldValue": "={{ $('Normalizar Campos').item.json.valor }}" },
-            { "fieldId": "status",    "fieldValue": "={{ $('Normalizar Campos').item.json.status }}" },
-            { "fieldId": "dados_raw", "fieldValue": "={{ $('Normalizar Campos').item.json.dados_raw }}" }
+            { "fieldId": "order_id",          "fieldValue": "={{ $('Normalizar Campos').item.json.order_id }}" },
+            { "fieldId": "aluno_id",          "fieldValue": "={{ $json.id }}" },
+            { "fieldId": "valor",             "fieldValue": "={{ $('Normalizar Campos').item.json.valor }}" },
+            { "fieldId": "status",            "fieldValue": "={{ $('Normalizar Campos').item.json.status }}" },
+            { "fieldId": "metodo_pagamento",  "fieldValue": "={{ $('Normalizar Campos').item.json.metodo_pagamento }}" },
+            { "fieldId": "dados_raw",         "fieldValue": "={{ $('Normalizar Campos').item.json.dados_raw }}" }
           ]
         }
       },
@@ -222,7 +246,7 @@
       "name": "Supabase — Create Produto",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [1780, 380],
+      "position": [2000, 400],
       "onError": "continueRegularOutput",
       "parameters": {
         "operation": "create",
@@ -245,7 +269,7 @@
       "name": "Produto Criado?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2000, 380],
+      "position": [2220, 400],
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
@@ -267,7 +291,7 @@
       "name": "Supabase — Buscar Produto",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [2220, 520],
+      "position": [2440, 540],
       "parameters": {
         "operation": "getAll",
         "tableId": "produtos",
@@ -295,7 +319,7 @@
       "name": "Merge — Produto",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
-      "position": [2440, 380],
+      "position": [2660, 400],
       "parameters": {
         "mode": "append",
         "options": {}
@@ -306,7 +330,7 @@
       "name": "Supabase — Create aluno_produtos",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [2660, 380],
+      "position": [2880, 400],
       "onError": "continueRegularOutput",
       "parameters": {
         "operation": "create",
@@ -327,9 +351,15 @@
     }
   ],
   "connections": {
-    "Pagtrust — Webhook": {
+    "Hotmart — Webhook": {
       "main": [
-        [{ "node": "Normalizar Campos", "type": "main", "index": 0 }]
+        [{ "node": "Evento Válido?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Evento Válido?": {
+      "main": [
+        [{ "node": "Normalizar Campos", "type": "main", "index": 0 }],
+        []
       ]
     },
     "Normalizar Campos": {
@@ -344,7 +374,7 @@
     },
     "Aluno Criado?": {
       "main": [
-        [{ "node": "Merge — Aluno", "type": "main", "index": 0 }],
+        [{ "node": "Merge — Aluno",        "type": "main", "index": 0 }],
         [{ "node": "Supabase — Buscar Aluno", "type": "main", "index": 0 }]
       ]
     },
@@ -370,7 +400,7 @@
     },
     "Produto Criado?": {
       "main": [
-        [{ "node": "Merge — Produto", "type": "main", "index": 0 }],
+        [{ "node": "Merge — Produto",          "type": "main", "index": 0 }],
         [{ "node": "Supabase — Buscar Produto", "type": "main", "index": 0 }]
       ]
     },
